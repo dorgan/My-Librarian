@@ -8,6 +8,8 @@ use App\Models\BookPlacement;
 use App\Models\User;
 use App\Models\UserPreference;
 use App\Models\WantToReadNote;
+use App\Services\LibraryStateService;
+use App\Services\OpenLibraryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,11 +19,28 @@ use Illuminate\Validation\Rule;
 
 class LibraryController extends Controller
 {
+    public function __construct(
+        private readonly LibraryStateService $libraryState,
+        private readonly OpenLibraryService $openLibrary,
+    ) {
+    }
+
     public function state(): JsonResponse
     {
         $user = $this->currentUser();
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
+    }
+
+    public function searchOpenLibrary(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'query' => ['required', 'string', 'max:180'],
+        ]);
+
+        return response()->json([
+            'results' => $this->openLibrary->search($data['query']),
+        ]);
     }
 
     public function storeBook(Request $request): JsonResponse
@@ -31,16 +50,30 @@ class LibraryController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:180'],
             'author' => ['nullable', 'string', 'max:180'],
+            'publisher' => ['nullable', 'string', 'max:180'],
             'spine_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'shelf_index' => ['nullable', 'integer', 'min:0', 'max:20'],
             'position_index' => ['nullable', 'integer', 'min:0', 'max:250'],
+            'open_library_work_key' => ['nullable', 'string', 'max:60'],
+            'open_library_edition_key' => ['nullable', 'string', 'max:60'],
+            'open_library_cover_id' => ['nullable', 'integer', 'min:1'],
+            'open_library_cover_ids' => ['nullable', 'array', 'max:8'],
+            'open_library_cover_ids.*' => ['integer', 'min:1'],
         ]);
+
+        $coverIds = $this->normalizedCoverIds($data['open_library_cover_ids'] ?? []);
+        $selectedCoverId = $this->selectedCoverId($data['open_library_cover_id'] ?? null, $coverIds);
 
         $book = Book::query()->create([
             'user_id' => $user->id,
             'title' => $data['title'],
             'author' => $data['author'] ?? null,
+            'publisher' => $data['publisher'] ?? null,
             'spine_color' => $data['spine_color'] ?? '#6f4e37',
+            'open_library_work_key' => $data['open_library_work_key'] ?? null,
+            'open_library_edition_key' => $data['open_library_edition_key'] ?? null,
+            'open_library_cover_id' => $selectedCoverId,
+            'open_library_cover_ids' => $coverIds,
         ]);
 
         $this->placeBook(
@@ -49,7 +82,7 @@ class LibraryController extends Controller
             (int) ($data['position_index'] ?? PHP_INT_MAX),
         );
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
     }
 
     public function moveBook(Request $request, Book $book): JsonResponse
@@ -64,7 +97,26 @@ class LibraryController extends Controller
 
         $this->placeBook($book, (int) $data['shelf_index'], (int) $data['position_index']);
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
+    }
+
+    public function updateBookCover(Request $request, Book $book): JsonResponse
+    {
+        $user = $this->currentUser();
+        $this->assertOwnership($book->user_id === $user->id);
+
+        $data = $request->validate([
+            'cover_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $coverIds = $this->normalizedCoverIds($book->open_library_cover_ids ?? []);
+        abort_unless(in_array((int) $data['cover_id'], $coverIds, true), 422);
+
+        $book->update([
+            'open_library_cover_id' => (int) $data['cover_id'],
+        ]);
+
+        return response()->json($this->libraryState->payload($user));
     }
 
     public function destroyBook(Book $book): JsonResponse
@@ -85,7 +137,7 @@ class LibraryController extends Controller
             $book->delete();
         });
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
     }
 
     public function storeNote(Request $request): JsonResponse
@@ -110,7 +162,7 @@ class LibraryController extends Controller
             'position_index' => $nextIndex + 1,
         ]);
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
     }
 
     public function updateNote(Request $request, WantToReadNote $note): JsonResponse
@@ -126,7 +178,7 @@ class LibraryController extends Controller
 
         $note->update($data);
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
     }
 
     public function destroyNote(WantToReadNote $note): JsonResponse
@@ -143,7 +195,7 @@ class LibraryController extends Controller
             $note->delete();
         });
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
     }
 
     public function updatePreferences(Request $request): JsonResponse
@@ -167,7 +219,7 @@ class LibraryController extends Controller
             ],
         );
 
-        return response()->json($this->statePayload($user));
+        return response()->json($this->libraryState->payload($user));
     }
 
     private function placeBook(Book $book, int $targetShelf, int $targetPosition): void
@@ -214,58 +266,6 @@ class LibraryController extends Controller
         });
     }
 
-    private function statePayload(User $user): array
-    {
-        $books = Book::query()
-            ->with('placement')
-            ->where('user_id', $user->id)
-            ->get()
-            ->filter(fn (Book $book): bool => (bool) $book->placement)
-            ->sortBy(fn (Book $book): string => sprintf('%03d-%04d-%08d', $book->placement->shelf_index, $book->placement->position_index, $book->id))
-            ->values()
-            ->map(fn (Book $book): array => [
-                'id' => $book->id,
-                'title' => $book->title,
-                'author' => $book->author,
-                'spineColor' => $book->spine_color,
-                'shelfIndex' => $book->placement->shelf_index,
-                'positionIndex' => $book->placement->position_index,
-            ]);
-
-        $notes = WantToReadNote::query()
-            ->where('user_id', $user->id)
-            ->orderBy('position_index')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (WantToReadNote $note): array => [
-                'id' => $note->id,
-                'title' => $note->title,
-                'author' => $note->author,
-                'note' => $note->note,
-            ]);
-
-        $preference = UserPreference::query()->firstOrCreate(
-            ['user_id' => $user->id],
-            [
-                'bookcase_theme' => 'oak',
-                'bookcase_shape' => 'classic',
-                'notes_theme' => 'paper',
-                'shelf_count' => 4,
-            ],
-        );
-
-        return [
-            'books' => $books,
-            'notes' => $notes,
-            'preferences' => [
-                'bookcaseTheme' => $preference->bookcase_theme,
-                'bookcaseShape' => $preference->bookcase_shape,
-                'notesTheme' => $preference->notes_theme,
-                'shelfCount' => $preference->shelf_count,
-            ],
-        ];
-    }
-
     private function currentUser(): User
     {
         return User::query()->firstOrCreate(
@@ -280,5 +280,31 @@ class LibraryController extends Controller
     private function assertOwnership(bool $isOwned): void
     {
         abort_unless($isOwned, 404);
+    }
+
+    /**
+     * @param  array<int, mixed>  $coverIds
+     * @return array<int, int>
+     */
+    private function normalizedCoverIds(array $coverIds): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            fn (mixed $coverId): int => (int) $coverId,
+            $coverIds,
+        ))));
+    }
+
+    /**
+     * @param  array<int, int>  $coverIds
+     */
+    private function selectedCoverId(mixed $coverId, array $coverIds): ?int
+    {
+        $selectedCoverId = (int) ($coverId ?? 0);
+
+        if ($selectedCoverId > 0 && in_array($selectedCoverId, $coverIds, true)) {
+            return $selectedCoverId;
+        }
+
+        return $coverIds[0] ?? null;
     }
 }
