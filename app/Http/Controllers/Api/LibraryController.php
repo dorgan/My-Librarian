@@ -39,7 +39,7 @@ class LibraryController extends Controller
         ]);
 
         return response()->json([
-            'results' => $this->openLibrary->search($user->email, $data['query']),
+            'results' => $this->openLibrary->search($data['query']),
         ]);
     }
 
@@ -86,7 +86,7 @@ class LibraryController extends Controller
         ]);
 
         return response()->json(
-            $this->openLibrary->selection($user->email, $data['work_key'] ?? null, $data['edition_key'] ?? null)
+            $this->openLibrary->selection($data['work_key'] ?? null, $data['edition_key'] ?? null)
         );
     }
 
@@ -99,6 +99,7 @@ class LibraryController extends Controller
             'author' => ['nullable', 'string', 'max:180'],
             'publisher' => ['nullable', 'string', 'max:180'],
             'spine_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'isbn' => ['nullable', 'string', 'max:20'],
             'shelf_index' => ['nullable', 'integer', 'min:0', 'max:20'],
             'position_index' => ['nullable', 'integer', 'min:0', 'max:250'],
             'rotation_mode' => ['nullable', Rule::in(self::ROTATION_MODES)],
@@ -117,7 +118,6 @@ class LibraryController extends Controller
             && (filled($data['open_library_work_key'] ?? null) || filled($data['open_library_edition_key'] ?? null))
         ) {
             $selection = $this->openLibrary->selection(
-                $user->email,
                 $data['open_library_work_key'] ?? null,
                 $data['open_library_edition_key'] ?? null,
             );
@@ -197,7 +197,7 @@ class LibraryController extends Controller
                 continue;
             }
 
-            $selection = $this->openLibrary->selection($user->email, $book->open_library_work_key, $book->open_library_edition_key);
+            $selection = $this->openLibrary->selection($book->open_library_work_key, $book->open_library_edition_key);
             $payload = is_array($selection['payload'] ?? null) ? $selection['payload'] : [];
 
             if ($payload === []) {
@@ -432,6 +432,7 @@ class LibraryController extends Controller
             'author' => $this->openLibrary->metadataAuthor($payload) ?? ($data['author'] ?? null),
             'publisher' => $this->openLibrary->metadataPublisher($payload) ?? ($data['publisher'] ?? null),
             'spine_color' => $data['spine_color'] ?? '#6f4e37',
+            'isbn' => $this->openLibrary->metadataIsbn($payload) ?? ($data['isbn'] ?? null),
             'open_library_work_key' => $this->normalizedKey(data_get($payload, 'work.key'), '/works/')
                 ?? ($data['open_library_work_key'] ?? null),
             'open_library_edition_key' => $this->normalizedKey(data_get($payload, 'edition.key'), '/books/')

@@ -17,6 +17,7 @@ class Book extends Model
         'author',
         'publisher',
         'spine_color',
+        'isbn',
         'open_library_work_key',
         'open_library_edition_key',
         'open_library_cover_id',

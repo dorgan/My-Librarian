@@ -9,7 +9,7 @@ class OpenLibraryService
 {
     private const MINIMUM_SECONDS_BETWEEN_REQUESTS = 1 / 3;
 
-    public function search(string $contactEmail, string $query, int $limit = 6): array
+    public function search(string $query, int $limit = 6): array
     {
         $query = trim($query);
 
@@ -17,7 +17,7 @@ class OpenLibraryService
             return [];
         }
 
-        $response = $this->requestJson($contactEmail, '/search.json', [
+        $response = $this->requestJson('/search.json', [
             'q' => $query,
             'limit' => $limit,
         ]);
@@ -31,25 +31,25 @@ class OpenLibraryService
             ->all();
     }
 
-    public function selection(string $contactEmail, ?string $workKey, ?string $editionKey): array
+    public function selection(?string $workKey, ?string $editionKey): array
     {
         $editionKey = $this->normalizeKey($editionKey, '/books/');
         $workKey = $this->normalizeKey($workKey, '/works/');
 
-        $edition = $editionKey ? $this->requestJson($contactEmail, "/books/{$editionKey}.json") : [];
-        $work = $workKey ? $this->requestJson($contactEmail, "/works/{$workKey}.json") : [];
+        $edition = $editionKey ? $this->requestJson("/books/{$editionKey}.json") : [];
+        $work = $workKey ? $this->requestJson("/works/{$workKey}.json") : [];
 
         if ($work === []) {
             $workKey = $this->normalizeKey(data_get($edition, 'works.0.key'), '/works/');
-            $work = $workKey ? $this->requestJson($contactEmail, "/works/{$workKey}.json") : [];
+            $work = $workKey ? $this->requestJson("/works/{$workKey}.json") : [];
         }
 
         if ($edition === []) {
             $editionKey = $this->normalizeKey(data_get($work, 'edition_key.0'), '/books/');
-            $edition = $editionKey ? $this->requestJson($contactEmail, "/books/{$editionKey}.json") : [];
+            $edition = $editionKey ? $this->requestJson("/books/{$editionKey}.json") : [];
         }
 
-        $authors = $this->authors($contactEmail, $edition, $work);
+        $authors = $this->authors($edition, $work);
         $payload = array_filter([
             'edition' => $edition,
             'work' => $work,
@@ -62,6 +62,7 @@ class OpenLibraryService
             'author' => $this->metadataAuthor($payload),
             'publisher' => $this->metadataPublisher($payload),
             'publishYear' => $this->metadataPublishYear($payload),
+            'isbn' => $this->metadataIsbn($payload),
             'workKey' => $this->normalizeKey(data_get($work, 'key'), '/works/') ?? $workKey,
             'editionKey' => $this->normalizeKey(data_get($edition, 'key'), '/books/') ?? $editionKey,
             'covers' => $this->coverOptions($coverIds),
@@ -163,6 +164,28 @@ class OpenLibraryService
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function metadataIsbn(array $payload): ?string
+    {
+        $isbn13 = data_get($payload, 'edition.isbn_13');
+        if (is_array($isbn13)) {
+            $isbn13 = $isbn13[0] ?? null;
+        }
+
+        if ($isbn13 = $this->stringOrNull($isbn13)) {
+            return $isbn13;
+        }
+
+        $isbn10 = data_get($payload, 'edition.isbn_10');
+        if (is_array($isbn10)) {
+            $isbn10 = $isbn10[0] ?? null;
+        }
+
+        return $this->stringOrNull($isbn10);
+    }
+
+    /**
      * @param  array<string, mixed>  $doc
      * @return array<string, mixed>|null
      */
@@ -196,7 +219,7 @@ class OpenLibraryService
      * @param  array<string, mixed>  $work
      * @return array<int, array<string, mixed>>
      */
-    private function authors(string $contactEmail, array $edition, array $work): array
+    private function authors(array $edition, array $work): array
     {
         $authorKeys = collect(data_get($edition, 'authors', []))
             ->map(fn (mixed $author): ?string => is_array($author) ? $this->normalizeKey($author['key'] ?? null, '/authors/') : null)
@@ -210,7 +233,7 @@ class OpenLibraryService
             ->values();
 
         return $authorKeys
-            ->map(fn (string $authorKey): array => $this->requestJson($contactEmail, "/authors/{$authorKey}.json"))
+            ->map(fn (string $authorKey): array => $this->requestJson("/authors/{$authorKey}.json"))
             ->filter(fn (array $author): bool => $author !== [])
             ->values()
             ->all();
@@ -219,9 +242,11 @@ class OpenLibraryService
     /**
      * @return array<string, mixed>
      */
-    private function requestJson(string $contactEmail, string $path, array $query = []): array
+    private function requestJson(string $path, array $query = []): array
     {
         $this->throttle();
+
+        $contactEmail = config('app.openlibrary.contact_email');
 
         $response = Http::baseUrl('https://openlibrary.org')
             ->acceptJson()

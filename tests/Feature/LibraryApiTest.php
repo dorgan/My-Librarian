@@ -43,6 +43,7 @@ class LibraryApiTest extends TestCase
                 'publishers' => ['Ace'],
                 'publish_date' => '1965',
                 'covers' => [101, 202],
+                'isbn_13' => ['9780441013593'],
                 'authors' => [
                     ['key' => '/authors/OL1A'],
                 ],
@@ -64,6 +65,7 @@ class LibraryApiTest extends TestCase
             ->assertJsonPath('author', 'Frank Herbert')
             ->assertJsonPath('publisher', 'Ace')
             ->assertJsonPath('publishYear', '1965')
+            ->assertJsonPath('isbn', '9780441013593')
             ->assertJsonCount(3, 'covers')
             ->json();
 
@@ -93,6 +95,7 @@ class LibraryApiTest extends TestCase
         $this->assertSame('Dune', $book->title);
         $this->assertSame('Frank Herbert', $book->author);
         $this->assertSame('Ace', $book->publisher);
+        $this->assertSame('9780441013593', $book->isbn);
         $this->assertSame('OL123W', $book->open_library_work_key);
         $this->assertSame('OL456M', $book->open_library_edition_key);
         $this->assertSame([101, 202, 303], $book->open_library_cover_ids);
@@ -122,7 +125,7 @@ class LibraryApiTest extends TestCase
         $this->assertDatabaseMissing('book_placements', ['book_id' => $book->id]);
     }
 
-    public function test_open_library_search_uses_authenticated_email_header(): void
+    public function test_open_library_search_uses_configured_contact_email_header(): void
     {
         $this->signIn('reader@example.com');
 
@@ -146,10 +149,12 @@ class LibraryApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('results.0.title', 'Dune');
 
-        Http::assertSent(function (HttpRequest $request): bool {
+        $contactEmail = config('app.openlibrary.contact_email');
+
+        Http::assertSent(function (HttpRequest $request) use ($contactEmail): bool {
             return $request->url() === 'https://openlibrary.org/search.json?q=dune&limit=6'
-                && $request->hasHeader('From', 'reader@example.com')
-                && str_contains($request->header('User-Agent')[0] ?? '', 'reader@example.com');
+                && $request->hasHeader('From', $contactEmail)
+                && str_contains($request->header('User-Agent')[0] ?? '', $contactEmail);
         });
     }
 

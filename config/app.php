@@ -123,4 +123,8 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'openlibrary' => [
+        'contact_email' => env('OPENLIBRARY_CONTACT_EMAIL', 'dorgan@donaldorgan.com'),
+    ],
+
 ];

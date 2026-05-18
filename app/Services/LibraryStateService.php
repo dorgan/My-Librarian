@@ -9,9 +9,7 @@ use App\Models\WantToReadNote;
 
 class LibraryStateService
 {
-    public function __construct(private readonly OpenLibraryService $openLibrary)
-    {
-    }
+    public function __construct(private readonly OpenLibraryService $openLibrary) {}
 
     public function payload(User $user): array
     {
@@ -81,6 +79,7 @@ class LibraryStateService
             'author' => $book->author,
             'publisher' => $book->publisher,
             'publishYear' => $this->openLibrary->metadataPublishYear($payload),
+            'isbn' => $book->isbn,
             'spineColor' => $book->spine_color,
             'coverId' => $selectedCoverId,
             'coverUrl' => $selectedCoverId ? $this->openLibrary->coverUrl($selectedCoverId, 'M') : null,
