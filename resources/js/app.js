@@ -855,7 +855,7 @@ if (initialStateElement) {
         notesPanel.dataset.theme = state.preferences.notesTheme;
     };
 
-    const canvasPoint = (event) => {
+    const canvasPointFromEvent = (event) => {
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
@@ -910,7 +910,7 @@ if (initialStateElement) {
     };
 
     canvas.addEventListener('pointerdown', (event) => {
-        const { x, y } = canvasPoint(event);
+        const { x, y } = canvasPointFromEvent(event);
         const book = findBookAtPoint(x, y);
         if (!book) {
             dragState = null;
@@ -938,7 +938,7 @@ if (initialStateElement) {
     });
 
     canvas.addEventListener('pointermove', (event) => {
-        const { x, y } = canvasPoint(event);
+        const { x, y } = canvasPointFromEvent(event);
 
         if (dragState && dragState.pointerId === event.pointerId) {
             const anim = animatedBooks.get(dragState.bookId);
@@ -966,7 +966,7 @@ if (initialStateElement) {
             return;
         }
 
-        const { x, y } = canvasPoint(event);
+        const { x, y } = canvasPointFromEvent(event);
         const { bookId, moved } = dragState;
         dragState = null;
         canvas.releasePointerCapture(event.pointerId);
