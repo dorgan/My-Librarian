@@ -60,9 +60,12 @@ if (initialStateElement) {
     // Slot layout constants
     const MIN_SLOT_COUNT = 12;         // minimum slots per shelf to keep spines readable
     const DECORATION_SLOT_BUFFER = 4;  // extra slots reserved at the right end for decoration objects
+    // Font size is capped by spine WIDTH: after -90° rotation, the character height maps to the spine's
+    // narrow dimension, so we limit by anim.w rather than anim.h.
     const MIN_SPINE_FONT_SIZE = 7;     // px — legible at minimum spine width
-    const MAX_SPINE_FONT_SIZE = 10;    // px — cap so text fits inside narrow spines
-    const SPINE_FONT_PADDING = 3;      // px — gap between font size and spine width
+    const MAX_SPINE_FONT_SIZE = 10;    // px — cap so rotated characters fit within the narrow spine
+    const SPINE_FONT_PADDING = 3;      // px — safety gap between font size and spine width
+    const MAX_DECORATION_ICON_SIZE = 13; // px — maximum icon font size inside decoration objects
 
     /** Scroll to an element after a short delay to let the panel animate open */
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
@@ -295,7 +298,7 @@ if (initialStateElement) {
 
         // Gear icon — signals "preferences"
         ctx.fillStyle = '#7a5c3a';
-        ctx.font = `${Math.min(bw - 2, 13)}px sans-serif`;
+        ctx.font = `${Math.min(bw - 2, MAX_DECORATION_ICON_SIZE)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('⚙', bx + bw / 2, by + bh / 2);
@@ -326,7 +329,7 @@ if (initialStateElement) {
 
         // Pencil icon — signals "notes"
         ctx.fillStyle = '#6b5a2b';
-        ctx.font = `${Math.min(pw - 2, 12)}px sans-serif`;
+        ctx.font = `${Math.min(pw - 2, MAX_DECORATION_ICON_SIZE)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('✏', px + pw / 2, py + ph / 2);
@@ -357,7 +360,7 @@ if (initialStateElement) {
 
         // Plus symbol
         ctx.fillStyle = '#9ca3af';
-        ctx.font = `bold ${Math.min(w + 6, 22)}px sans-serif`;
+        ctx.font = `bold ${Math.min(w + 6, MAX_DECORATION_ICON_SIZE + 9)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('+', x + w / 2, y + h / 2);
