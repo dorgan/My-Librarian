@@ -1,4 +1,4 @@
-# My Library
+# My Librarian
 
 A Laravel + SQLite app for tracking books you have read on an interactive bookcase and maintaining a "want to read" notes list.
 
