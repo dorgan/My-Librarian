@@ -4,6 +4,9 @@ A Laravel + SQLite app for tracking books you have read on an interactive bookca
 
 ## Features
 
+- Email-only registration and login via expiring magic links
+- One-time magic-link consumption with automatic email verification
+- Passkey onboarding and passkey sign-in support for returning users
 - Responsive UI (desktop/tablet/mobile)
 - Canvas-based bookcase rendering with animated book movement
 - Open Library-powered book search and selection when adding books to the shelf
@@ -45,6 +48,14 @@ npm run dev
 
 Then open http://127.0.0.1:8000.
 
+## Authentication flow
+
+1. Visit `/register` and submit your email.
+2. Open the magic link email from the configured mail driver.
+3. First login verifies your email and opens passkey onboarding.
+4. Register a passkey for future sign-ins, or skip and use magic links.
+5. Returning users can sign in at `/login` with passkey or magic-link fallback.
+
 ## Test
 
 ```bash
@@ -61,6 +72,4 @@ npm run build
 
 ## Next-step backlog
 
-- Add full authentication and per-account multi-user support
-- Add drag-and-drop repositioning directly on canvas
 - Add import/export support
