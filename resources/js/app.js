@@ -98,11 +98,30 @@ if (initialStateElement) {
         syncPanels();
     };
 
-    /** Return the book (or null) whose spine rect contains (x, y) in canvas coordinates */
+    const pointInAnimatedBookRect = (x, y, anim) => {
+        const centerX = anim.x + (anim.w / 2);
+        const centerY = anim.y + (anim.h / 2);
+        const angle = anim.a || 0;
+
+        if (angle === 0) {
+            return x >= anim.x && x <= anim.x + anim.w && y >= anim.y && y <= anim.y + anim.h;
+        }
+
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const localX = (dx * cos) + (dy * sin);
+        const localY = (-dx * sin) + (dy * cos);
+
+        return Math.abs(localX) <= anim.w / 2 && Math.abs(localY) <= anim.h / 2;
+    };
+
+    /** Return the book (or null) whose rendered rect contains (x, y) in canvas coordinates */
     const findBookAtPoint = (x, y) => {
         for (const book of [...state.books].reverse()) {
             const anim = animatedBooks.get(book.id);
-            if (anim && x >= anim.x && x <= anim.x + anim.w && y >= anim.y && y <= anim.y + anim.h) {
+            if (anim && pointInAnimatedBookRect(x, y, anim)) {
                 return book;
             }
         }
