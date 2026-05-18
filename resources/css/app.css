@@ -27,11 +27,8 @@ a {
     min-height: 100dvh;
 }
 
-.logout-form {
-    position: fixed;
-    top: 0.75rem;
-    right: 0.75rem;
-    z-index: 60;
+.panel-signout-form {
+    margin-top: 0.25rem;
 }
 
 .main-layout {
@@ -458,11 +455,6 @@ button:hover {
 
     .metadata-refresh-actions {
         flex-direction: column;
-    }
-
-    .logout-form {
-        top: 0.5rem;
-        right: 0.5rem;
     }
 
     .controls-panel,

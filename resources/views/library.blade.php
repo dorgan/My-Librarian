@@ -22,11 +22,6 @@
 
 <body>
     <div class="app-shell">
-        <form method="POST" action="{{ route('logout') }}" class="logout-form">
-            @csrf
-            <button type="submit" class="secondary-btn">Sign out</button>
-        </form>
-
         <button type="button" id="toggle-controls" class="floating-btn" aria-expanded="false"
             aria-label="Open library controls">Library controls</button>
         <button type="button" id="toggle-notes" class="floating-btn" aria-expanded="false"
@@ -159,6 +154,10 @@
                 <label>Shelves <input name="shelf_count" type="number" min="2" max="8"
                         value="4"></label>
                 <button type="submit">Save bookshelf preferences</button>
+            </form>
+            <form method="POST" action="{{ route('logout') }}" class="panel-signout-form">
+                @csrf
+                <button type="submit" class="secondary-btn">Sign out</button>
             </form>
         </aside>
 
