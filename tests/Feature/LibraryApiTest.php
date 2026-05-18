@@ -153,6 +153,74 @@ class LibraryApiTest extends TestCase
         });
     }
 
+    public function test_bookshelf_search_only_returns_matching_books_for_authenticated_user(): void
+    {
+        $user = $this->signIn('reader@example.com');
+
+        $matchingBook = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Dune Messiah',
+            'author' => 'Frank Herbert',
+            'spine_color' => '#6f4e37',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $matchingBook->id,
+            'user_id' => $user->id,
+            'shelf_index' => 2,
+            'position_index' => 1,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $nonMatchingBook = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'The Hobbit',
+            'author' => 'J.R.R. Tolkien',
+            'spine_color' => '#6f4e37',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $nonMatchingBook->id,
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $otherUser = User::factory()->create();
+        $otherUsersBook = Book::query()->create([
+            'user_id' => $otherUser->id,
+            'title' => 'Dune Encyclopedia',
+            'author' => 'Willis E. McNelly',
+            'spine_color' => '#6f4e37',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $otherUsersBook->id,
+            'user_id' => $otherUser->id,
+            'shelf_index' => 1,
+            'position_index' => 0,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $this->getJson('/api/bookshelf/search?query=dune')
+            ->assertOk()
+            ->assertJsonCount(1, 'results')
+            ->assertJsonPath('results.0.id', $matchingBook->id)
+            ->assertJsonPath('results.0.title', 'Dune Messiah')
+            ->assertJsonPath('results.0.shelfIndex', 2)
+            ->assertJsonPath('results.0.positionIndex', 1);
+    }
+
+    public function test_bookshelf_search_requires_query(): void
+    {
+        $this->signIn();
+
+        $this->getJson('/api/bookshelf/search')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['query']);
+    }
+
     public function test_user_cannot_modify_another_users_book(): void
     {
         $owner = User::factory()->create();
@@ -204,6 +272,7 @@ class LibraryApiTest extends TestCase
 
     private function signIn(string $email = 'reader@example.com'): User
     {
+        /** @var User $user */
         $user = User::factory()->create([
             'email' => $email,
             'email_verified_at' => now(),

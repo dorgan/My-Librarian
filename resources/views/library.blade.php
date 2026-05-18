@@ -48,6 +48,18 @@
             </section>
 
             <section>
+                <h2>Search bookshelf</h2>
+                <form id="bookshelf-search-form" class="inline-form inline-form--search">
+                    <label class="search-field">Book title <input name="query" maxlength="180"
+                            placeholder="Find a book already on your shelves"></label>
+                    <button type="submit">Find</button>
+                </form>
+                <p id="bookshelf-search-feedback" class="hint" aria-live="polite">Use the binoculars on the shelf or
+                    search here to jump to a read book.</p>
+                <div id="bookshelf-search-results" class="search-results" aria-live="polite"></div>
+            </section>
+
+            <section>
                 <h2>Search Open Library</h2>
                 <form id="book-search-form" class="inline-form inline-form--search">
                     <label class="search-field">Book title or author <input name="query" maxlength="180"
@@ -71,7 +83,8 @@
                         <div id="add-book-cover-picker" class="cover-picker" aria-live="polite"></div>
                     </div>
                     <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
-                    <label>Position <input name="position_index" type="number" min="0" value="0"></label>
+                    <label>Position <input name="position_index" type="number" min="0"
+                            value="0"></label>
                     <button type="submit">Add to bookcase</button>
                 </form>
             </section>

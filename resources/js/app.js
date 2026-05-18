@@ -106,6 +106,7 @@ if (initialStateElement) {
     let bookshelfPreferencesOpen = false;
     let notesPreferencesOpen = false;
     let searchResults = [];
+    let bookshelfSearchResults = [];
     let addBookSelection = null;
     const refreshSelection = new Set();
 
@@ -122,6 +123,9 @@ if (initialStateElement) {
     const selectedBookMeta = document.getElementById('selected-book-meta');
     const selectedBookCoverPicker = document.getElementById('selected-book-cover-picker');
     const notesList = document.getElementById('notes-list');
+    const bookshelfSearchForm = document.getElementById('bookshelf-search-form');
+    const bookshelfSearchFeedback = document.getElementById('bookshelf-search-feedback');
+    const bookshelfSearchResultsContainer = document.getElementById('bookshelf-search-results');
     const bookSearchForm = document.getElementById('book-search-form');
     const bookSearchFeedback = document.getElementById('book-search-feedback');
     const bookSearchResults = document.getElementById('book-search-results');
@@ -188,6 +192,22 @@ if (initialStateElement) {
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
         setTimeout(() => document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), delay);
     };
+
+    const focusElementAfterDelay = (elementId, delay = 150) => {
+        setTimeout(() => {
+            const element = document.getElementById(elementId);
+            if (!element) {
+                return;
+            }
+
+            const focusTarget = element.matches('input, select, textarea, button')
+                ? element
+                : element.querySelector('input, select, textarea, button');
+
+            focusTarget?.focus();
+        }, delay);
+    };
+
     const isDraggingBook = (bookId) => Boolean(dragState && dragState.bookId === bookId);
     const openPanel = (panel) => {
         controlsOpen = panel === 'controls';
@@ -527,6 +547,8 @@ if (initialStateElement) {
             notes:       { x: slotX(slotCount - 1), y: slotY(shelves - 1), w, h },
             // Add-book ghost — second-to-last slot, top shelf
             addBook:     { x: slotX(slotCount - 2), y: slotY(0),            w, h },
+            // Bookshelf search binoculars — third-to-last slot, top shelf
+            bookshelfSearch: { x: slotX(slotCount - 3), y: slotY(0),        w, h },
         };
     };
 
@@ -633,11 +655,38 @@ if (initialStateElement) {
         ctx.fillText('+', x + w / 2, y + h / 2);
     };
 
+    const drawBinoculars = (rect) => {
+        const { x, y, w, h } = rect;
+        const lensRadius = Math.max(5, Math.floor(w * 0.27));
+        const leftLensX = x + (w * 0.35);
+        const rightLensX = x + (w * 0.65);
+        const lensY = y + (h * 0.58);
+
+        ctx.fillStyle = '#111827';
+        ctx.beginPath();
+        ctx.arc(leftLensX, lensY, lensRadius, 0, Math.PI * 2);
+        ctx.arc(rightLensX, lensY, lensRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#1f2937';
+        roundRect(x + (w * 0.28), y + (h * 0.25), w * 0.44, h * 0.2, 3);
+        ctx.fill();
+
+        ctx.fillStyle = '#93c5fd';
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.arc(leftLensX - 1, lensY - 1, lensRadius * 0.45, 0, Math.PI * 2);
+        ctx.arc(rightLensX - 1, lensY - 1, lensRadius * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    };
+
     const drawDecorations = () => {
         const decors = getDecorationRects();
         drawMug(decors.preferences);
         drawNotepad(decors.notes);
         drawGhostBook(decors.addBook);
+        drawBinoculars(decors.bookshelfSearch);
     };
 
     const drawBookcase = () => {
@@ -816,6 +865,51 @@ if (initialStateElement) {
         );
     };
 
+    const renderBookshelfSearchResults = () => {
+        bookshelfSearchResultsContainer.innerHTML = '';
+
+        if (!bookshelfSearchResults.length) {
+            return;
+        }
+
+        for (const result of bookshelfSearchResults) {
+            const card = document.createElement('article');
+            card.className = `search-result${selectedBookId === result.id ? ' active' : ''}`;
+
+            const copy = document.createElement('div');
+            copy.className = 'search-result-copy';
+
+            const title = document.createElement('h3');
+            title.textContent = result.title;
+            copy.appendChild(title);
+
+            if (result.author) {
+                const author = document.createElement('p');
+                author.textContent = result.author;
+                copy.appendChild(author);
+            }
+
+            const shelfLocation = document.createElement('p');
+            shelfLocation.textContent = `Shelf ${Number(result.shelfIndex) + 1}, position ${Number(result.positionIndex) + 1}`;
+            copy.appendChild(shelfLocation);
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = selectedBookId === result.id ? 'Selected on shelf' : 'Select this book';
+            button.addEventListener('click', () => {
+                selectedBookId = result.id;
+                renderSelectedBook();
+                renderBookshelfSearchResults();
+                bookshelfSearchFeedback.textContent = `${result.title} selected on your bookshelf.`;
+                scrollToElementAfterDelay('selected-book-label');
+            });
+            copy.appendChild(button);
+
+            card.appendChild(copy);
+            bookshelfSearchResultsContainer.appendChild(card);
+        }
+    };
+
     const renderSearchResults = () => {
         bookSearchResults.innerHTML = '';
 
@@ -992,12 +1086,15 @@ if (initialStateElement) {
             selectedBookId = null;
         }
 
+        bookshelfSearchResults = bookshelfSearchResults.filter((result) => currentBookIds.has(result.id));
+
         bookshelfPreferencesForm.bookcase_theme.value = state.preferences.bookcaseTheme;
         bookshelfPreferencesForm.bookcase_shape.value = state.preferences.bookcaseShape;
         bookshelfPreferencesForm.shelf_count.value = state.preferences.shelfCount;
         notesPreferencesForm.notes_theme.value = state.preferences.notesTheme;
 
         renderSelectedBook();
+        renderBookshelfSearchResults();
         renderMetadataRefreshList();
         renderNotes();
         ensureAnimatedBooks();
@@ -1113,6 +1210,14 @@ if (initialStateElement) {
         if (hitTest(x, y, decors.addBook)) {
             openPanel('controls');
             scrollToElementAfterDelay('book-search-form');
+            focusElementAfterDelay('book-search-form');
+            return;
+        }
+
+        if (hitTest(x, y, decors.bookshelfSearch)) {
+            openPanel('controls');
+            scrollToElementAfterDelay('bookshelf-search-form');
+            focusElementAfterDelay('bookshelf-search-form');
             return;
         }
 
@@ -1206,7 +1311,10 @@ if (initialStateElement) {
         }
 
         const decors = getDecorationRects();
-        const overDecor = hitTest(x, y, decors.preferences) || hitTest(x, y, decors.notes) || hitTest(x, y, decors.addBook);
+        const overDecor = hitTest(x, y, decors.preferences)
+            || hitTest(x, y, decors.notes)
+            || hitTest(x, y, decors.addBook)
+            || hitTest(x, y, decors.bookshelfSearch);
         canvas.style.cursor = (overDecor || findBookAtPoint(x, y) !== null) ? 'pointer' : 'default';
     });
 
@@ -1261,6 +1369,32 @@ if (initialStateElement) {
                 anim.th = originalTarget.h;
                 anim.ta = originalTarget.a;
             }
+        }
+    });
+
+    bookshelfSearchForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const query = bookshelfSearchForm.query.value.trim();
+        if (!query) {
+            bookshelfSearchResults = [];
+            renderBookshelfSearchResults();
+            bookshelfSearchFeedback.textContent = 'Type a title to search books on your shelves.';
+            return;
+        }
+
+        bookshelfSearchFeedback.textContent = 'Searching your bookshelf…';
+
+        try {
+            const response = await fetchJson(`/api/bookshelf/search?query=${encodeURIComponent(query)}`);
+            bookshelfSearchResults = (response.results || []);
+            renderBookshelfSearchResults();
+            bookshelfSearchFeedback.textContent = bookshelfSearchResults.length
+                ? `Found ${bookshelfSearchResults.length} matching bookshelf title${bookshelfSearchResults.length === 1 ? '' : 's'}.`
+                : 'No matching title was found on your bookshelf.';
+        } catch {
+            bookshelfSearchResults = [];
+            renderBookshelfSearchResults();
+            bookshelfSearchFeedback.textContent = 'Bookshelf search is unavailable right now.';
         }
     });
 

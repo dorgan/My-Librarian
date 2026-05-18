@@ -43,6 +43,40 @@ class LibraryController extends Controller
         ]);
     }
 
+    public function searchBookshelf(Request $request): JsonResponse
+    {
+        $user = $this->userFromRequest($request);
+        $data = $request->validate([
+            'query' => ['required', 'string', 'max:180'],
+        ]);
+
+        $query = trim($data['query']);
+
+        if ($query === '') {
+            return response()->json(['results' => []]);
+        }
+
+        $results = Book::query()
+            ->where('user_id', $user->id)
+            ->whereHas('placement')
+            ->where('title', 'like', "%{$query}%")
+            ->with('placement')
+            ->orderBy('title')
+            ->limit(20)
+            ->get()
+            ->map(fn (Book $book): array => [
+                'id' => $book->id,
+                'title' => $book->title,
+                'author' => $book->author,
+                'shelfIndex' => $book->placement?->shelf_index,
+                'positionIndex' => $book->placement?->position_index,
+            ])
+            ->values()
+            ->all();
+
+        return response()->json(['results' => $results]);
+    }
+
     public function openLibrarySelection(Request $request): JsonResponse
     {
         $user = $this->userFromRequest($request);
