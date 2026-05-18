@@ -56,6 +56,30 @@ if (initialStateElement) {
         const { r, g, b } = hexToRgb(hex);
         return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#1f2937' : '#fef9ee';
     };
+
+    // Slot layout constants
+    const MIN_SLOT_COUNT = 12;         // minimum slots per shelf to keep spines readable
+    const DECORATION_SLOT_BUFFER = 4;  // extra slots reserved at the right end for decoration objects
+    const MIN_SPINE_FONT_SIZE = 7;     // px — legible at minimum spine width
+    const MAX_SPINE_FONT_SIZE = 10;    // px — cap so text fits inside narrow spines
+    const SPINE_FONT_PADDING = 3;      // px — gap between font size and spine width
+
+    /** Scroll to an element after a short delay to let the panel animate open */
+    const scrollToElementAfterDelay = (elementId, delay = 120) => {
+        setTimeout(() => document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), delay);
+    };
+
+    /** Return the book (or null) whose spine rect contains (x, y) in canvas coordinates */
+    const findBookAtPoint = (x, y) => {
+        for (const book of [...state.books].reverse()) {
+            const anim = animatedBooks.get(book.id);
+            if (anim && x >= anim.x && x <= anim.x + anim.w && y >= anim.y && y <= anim.y + anim.h) {
+                return book;
+            }
+        }
+        return null;
+    };
+
     const safeCoverUrl = (value) => {
         if (typeof value !== 'string' || !value) {
             return null;
@@ -103,8 +127,8 @@ if (initialStateElement) {
         const padding = 28;
         const shelfSpacing = (canvas.height - (padding * 2)) / shelves;
         const maxPosition = state.books.reduce((largest, book) => Math.max(largest, Number(book.positionIndex) || 0), 0);
-        // Extra slots so decoration objects always fit at the right end
-        const slotCount = Math.max(12, maxPosition + 4);
+        // MIN_SLOT_COUNT keeps spines readable; DECORATION_SLOT_BUFFER reserves end slots for objects
+        const slotCount = Math.max(MIN_SLOT_COUNT, maxPosition + DECORATION_SLOT_BUFFER);
         const slotWidth = (canvas.width - (padding * 2)) / slotCount;
         return { shelves, slotCount, padding, shelfSpacing, slotWidth };
     };
@@ -209,7 +233,7 @@ if (initialStateElement) {
         ctx.save();
         ctx.translate(anim.x + anim.w / 2, anim.y + anim.h - 7);
         ctx.rotate(-Math.PI / 2);
-        const fontSize = Math.max(7, Math.min(10, anim.w - 3));
+        const fontSize = Math.max(MIN_SPINE_FONT_SIZE, Math.min(MAX_SPINE_FONT_SIZE, anim.w - SPINE_FONT_PADDING));
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.fillStyle = spineTextColor(base);
         ctx.textBaseline = 'middle';
@@ -761,7 +785,7 @@ if (initialStateElement) {
         if (hitTest(x, y, decors.preferences)) {
             controlsOpen = true;
             syncPanels();
-            setTimeout(() => document.getElementById('preferences-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+            scrollToElementAfterDelay('preferences-form');
             return;
         }
 
@@ -774,24 +798,19 @@ if (initialStateElement) {
         if (hitTest(x, y, decors.addBook)) {
             controlsOpen = true;
             syncPanels();
-            setTimeout(() => document.getElementById('book-search-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+            scrollToElementAfterDelay('book-search-form');
             return;
         }
 
         // Check book spines
-        for (const book of [...state.books].reverse()) {
-            const anim = animatedBooks.get(book.id);
-            if (!anim) continue;
-
-            const inside = x >= anim.x && x <= anim.x + anim.w && y >= anim.y && y <= anim.y + anim.h;
-            if (inside) {
-                selectedBookId = book.id;
-                renderSelectedBook();
-                controlsOpen = true;
-                syncPanels();
-                setTimeout(() => document.getElementById('selected-book-label')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
-                return;
-            }
+        const book = findBookAtPoint(x, y);
+        if (book) {
+            selectedBookId = book.id;
+            renderSelectedBook();
+            controlsOpen = true;
+            syncPanels();
+            scrollToElementAfterDelay('selected-book-label');
+            return;
         }
 
         // Click on empty shelf — close panels
@@ -811,12 +830,7 @@ if (initialStateElement) {
 
         const decors = getDecorationRects();
         const overDecor = hitTest(x, y, decors.preferences) || hitTest(x, y, decors.notes) || hitTest(x, y, decors.addBook);
-        const overBook = state.books.some((book) => {
-            const anim = animatedBooks.get(book.id);
-            return anim && x >= anim.x && x <= anim.x + anim.w && y >= anim.y && y <= anim.y + anim.h;
-        });
-
-        canvas.style.cursor = (overDecor || overBook) ? 'pointer' : 'default';
+        canvas.style.cursor = (overDecor || findBookAtPoint(x, y) !== null) ? 'pointer' : 'default';
     });
 
     bookSearchForm.addEventListener('submit', async (event) => {
