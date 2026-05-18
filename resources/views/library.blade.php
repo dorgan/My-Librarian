@@ -125,7 +125,8 @@
                 <p class="hint">Split shelves with little decor like bookends, fake plants, and knick-knacks.</p>
                 <form id="add-shelf-divider-form" class="stacked-form">
                     <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
-                    <label>Position <input name="position_index" type="number" min="0" value="0"></label>
+                    <label>Position <input name="position_index" type="number" min="0"
+                            value="0"></label>
                     <label>Divider style
                         <select name="style">
                             <option value="bookend">Bookend</option>
@@ -135,7 +136,8 @@
                     </label>
                     <button type="submit">Add shelf divider</button>
                 </form>
-                <p id="shelf-divider-feedback" class="hint" aria-live="polite">Tap a divider on the shelf to remove it.</p>
+                <p id="shelf-divider-feedback" class="hint" aria-live="polite">Tap a divider on the shelf to remove
+                    it.</p>
                 <div id="selected-divider-controls" class="selected-divider-controls" hidden>
                     <p id="selected-divider-label" class="selected-book-meta">No divider selected</p>
                     <button id="remove-divider" type="button" class="danger-btn">Remove divider</button>
