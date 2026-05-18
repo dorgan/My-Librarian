@@ -42,6 +42,11 @@
                     aria-label="Close controls">Close</button>
             </div>
 
+            <section id="install-section" style="display: none;">
+                <button type="button" id="install-button" class="primary-btn">Install My Librarian</button>
+                <p class="hint">Install this app on your home screen for quick access and offline use.</p>
+            </section>
+
             <section>
                 <h2>Search Open Library</h2>
                 <form id="book-search-form" class="inline-form inline-form--search">

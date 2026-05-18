@@ -1,3 +1,39 @@
+// PWA Install Prompt Handler
+let deferredPrompt;
+
+window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredPrompt = event;
+    
+    // Show the install button
+    const installSection = document.getElementById('install-section');
+    const installButton = document.getElementById('install-button');
+    
+    if (installSection && installButton) {
+        installSection.style.display = 'block';
+        
+        installButton.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log(`User response: ${outcome}`);
+                deferredPrompt = null;
+                installSection.style.display = 'none';
+            }
+        });
+    }
+});
+
+// Hide install button if app is already installed
+window.addEventListener('appinstalled', () => {
+    const installSection = document.getElementById('install-section');
+    if (installSection) {
+        installSection.style.display = 'none';
+    }
+    console.log('My Librarian was installed');
+});
+
+// Service Worker Registration
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {
