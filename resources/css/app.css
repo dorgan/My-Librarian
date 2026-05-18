@@ -14,52 +14,78 @@
 body {
     margin: 0;
     font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
-    background: var(--bg);
+    background: #1a0f0a;
     color: var(--text);
+    overflow: hidden;
 }
 
 .app-shell {
-    min-height: 100vh;
-    padding: 1rem;
+    min-height: 100dvh;
 }
 
 .main-layout {
-    display: grid;
-    grid-template-columns: 2fr minmax(320px, 1fr) minmax(320px, 1fr);
-    gap: 1rem;
-    align-items: start;
-}
-
-.bookcase-panel,
-.controls-panel,
-.notes-panel {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    padding: 0.85rem;
-}
-
-.bookcase-panel canvas {
-    width: 100%;
     display: block;
-    border-radius: 0.6rem;
-    border: 1px solid #d4c5b2;
-    touch-action: manipulation;
 }
 
 .bookcase-panel {
-    display: grid;
+    display: block;
 }
 
+.bookcase-panel canvas {
+    display: block;
+    width: 100%;
+    height: 100dvh;
+    touch-action: manipulation;
+}
+
+/* ===== OVERLAY PANELS ===== */
+.controls-panel,
+.notes-panel {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    width: min(420px, 100vw);
+    background: var(--card);
+    overflow: auto;
+    pointer-events: none;
+    transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
+    padding: 1rem;
+}
+
+.controls-panel {
+    left: 0;
+    right: auto;
+    border-right: 1px solid var(--border);
+    box-shadow: 4px 0 28px rgba(0, 0, 0, 0.22);
+    transform: translateX(-105%);
+    opacity: 0;
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+}
+
+.notes-panel {
+    right: 0;
+    left: auto;
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 28px rgba(0, 0, 0, 0.22);
+    transform: translateX(105%);
+    opacity: 0;
+}
+
+.controls-panel.open,
+.notes-panel.open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ===== PANEL INTERIOR ===== */
 .hint {
     margin: 0.5rem 0 0;
     color: var(--muted);
     font-size: 0.92rem;
-}
-
-.controls-panel {
-    display: grid;
-    gap: 1rem;
 }
 
 .controls-panel h2,
@@ -126,24 +152,9 @@ button:hover {
     color: #111827;
 }
 
+/* ===== FLOATING BUTTONS (hidden — interactions via canvas objects) ===== */
 .floating-btn {
-    position: fixed;
-    right: 1rem;
-    z-index: 60;
-    box-shadow: 0 8px 18px rgba(17, 24, 39, 0.24);
-    min-width: 44px;
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.floating-btn--notes {
-    bottom: 1rem;
-}
-
-.floating-btn--controls {
-    bottom: 4.25rem;
+    display: none;
 }
 
 .floating-btn:focus-visible,
@@ -291,7 +302,11 @@ button:hover {
 }
 
 .panel-close {
-    display: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    min-height: 36px;
 }
 
 .overlay-backdrop {
@@ -299,19 +314,6 @@ button:hover {
     inset: 0;
     background: rgba(17, 24, 39, 0.45);
     z-index: 40;
-}
-
-.notes-panel {
-    transform: translateX(102%);
-    opacity: 0;
-    transition: transform 220ms ease, opacity 220ms ease;
-    max-height: calc(100vh - 10rem);
-    overflow: hidden;
-}
-
-.notes-panel.open {
-    transform: translateX(0);
-    opacity: 1;
 }
 
 .notes-panel .notes-inner {
@@ -360,83 +362,7 @@ button:hover {
     background: #1f2937;
 }
 
-@media (max-width: 1100px) {
-    .main-layout {
-        grid-template-columns: 1fr;
-    }
-
-    .bookcase-panel {
-        min-height: calc(100vh - 2rem);
-    }
-
-    .notes-panel {
-        transform: translateY(102%);
-    }
-
-    .notes-panel.open {
-        transform: translateY(0);
-    }
-}
-
 @media (max-width: 640px) {
-    .app-shell {
-        padding: 0;
-    }
-
-    .main-layout {
-        min-height: 100dvh;
-    }
-
-    .bookcase-panel {
-        border: 0;
-        border-radius: 0;
-        padding: 0;
-        min-height: 100dvh;
-    }
-
-    .bookcase-panel canvas {
-        border-radius: 0;
-        border-width: 0;
-        height: 100dvh;
-    }
-
-    .controls-panel,
-    .notes-panel {
-        position: fixed;
-        inset: 0;
-        z-index: 50;
-        border-radius: 0;
-        border: 0;
-        transform: translateY(102%);
-        opacity: 0;
-        pointer-events: none;
-        max-height: 100dvh;
-        overflow: auto;
-        transition: transform 220ms ease, opacity 220ms ease;
-    }
-
-    .controls-panel.open,
-    .notes-panel.open {
-        transform: translateY(0);
-        opacity: 1;
-        pointer-events: auto;
-    }
-
-    .controls-panel h2,
-    .notes-panel h2 {
-        font-size: 1rem;
-    }
-
-    .panel-close {
-        display: inline-flex;
-    }
-
-    .floating-btn {
-        right: 0.75rem;
-        border-radius: 999px;
-        padding-inline: 0.95rem;
-    }
-
     .inline-form,
     .inline-form--search,
     .search-result {
