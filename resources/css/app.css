@@ -191,6 +191,20 @@ button:hover {
     font-size: 0.92rem;
 }
 
+.selected-book-orientation {
+    margin-top: 0.65rem;
+}
+
+.selected-book-orientation-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.selected-book-orientation-controls select {
+    flex: 1;
+}
+
 .search-results {
     display: grid;
     gap: 0.6rem;

@@ -65,6 +65,18 @@
                 <h2>Selected book</h2>
                 <p id="selected-book-label">No book selected</p>
                 <p id="selected-book-meta" class="selected-book-meta"></p>
+                <div class="selected-book-orientation">
+                    <label for="selected-book-orientation">Orientation</label>
+                    <div class="selected-book-orientation-controls">
+                        <select id="selected-book-orientation" aria-label="Selected book orientation">
+                            <option value="upright">Upright</option>
+                            <option value="side">On side</option>
+                            <option value="tilt_left">Tilt left</option>
+                            <option value="tilt_right">Tilt right</option>
+                        </select>
+                        <button id="apply-book-orientation" type="button" class="secondary-btn">Apply</button>
+                    </div>
+                </div>
                 <div>
                     <p class="cover-picker-label">Displayed cover</p>
                     <div id="selected-book-cover-picker" class="cover-picker" aria-live="polite"></div>

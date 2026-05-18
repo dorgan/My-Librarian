@@ -156,6 +156,47 @@ class LibraryApiTest extends TestCase
         });
     }
 
+    public function test_book_rotation_can_be_changed_without_moving_shelf_slot(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'demo@my-library.local',
+        ]);
+
+        $book = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Dune',
+            'author' => 'Frank Herbert',
+            'publisher' => 'Ace',
+            'spine_color' => '#123456',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $book->id,
+            'user_id' => $user->id,
+            'shelf_index' => 1,
+            'position_index' => 0,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $response = $this->patchJson("/api/books/{$book->id}/position", [
+            'shelf_index' => 1,
+            'position_index' => 0,
+            'rotation_mode' => 'side',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('books.0.rotationMode', 'side');
+        $response->assertJsonPath('books.0.shelfIndex', 1);
+        $response->assertJsonPath('books.0.positionIndex', 0);
+
+        $this->assertDatabaseHas('book_placements', [
+            'book_id' => $book->id,
+            'shelf_index' => 1,
+            'position_index' => 0,
+            'rotation_mode' => 'side',
+        ]);
+    }
+
     public function test_refresh_metadata_updates_selected_books(): void
     {
         $user = User::query()->create([
