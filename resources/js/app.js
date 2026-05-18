@@ -6,6 +6,8 @@ if (initialStateElement) {
     let selectedBookId = null;
     let notesOpen = false;
     let controlsOpen = false;
+    let bookshelfPreferencesOpen = false;
+    let notesPreferencesOpen = false;
     let searchResults = [];
     let addBookSelection = null;
     const refreshSelection = new Set();
@@ -32,10 +34,17 @@ if (initialStateElement) {
     const metadataRefreshList = document.getElementById('metadata-refresh-list');
     const refreshSelectedBooksButton = document.getElementById('refresh-selected-books');
     const refreshAllBooksButton = document.getElementById('refresh-all-books');
-    const moveBookForm = document.getElementById('move-book-form');
+    const bookRotationControls = document.getElementById('book-rotation-controls');
     const removeBookButton = document.getElementById('remove-book');
     const addNoteForm = document.getElementById('add-note-form');
-    const preferencesForm = document.getElementById('preferences-form');
+    const openBookshelfPreferencesButton = document.getElementById('open-bookshelf-preferences');
+    const openNotesPreferencesButton = document.getElementById('open-notes-preferences');
+    const bookshelfPreferencesPanel = document.getElementById('bookshelf-preferences-panel');
+    const notesPreferencesPanel = document.getElementById('notes-preferences-panel');
+    const closeBookshelfPreferencesButton = document.getElementById('close-bookshelf-preferences');
+    const closeNotesPreferencesButton = document.getElementById('close-notes-preferences');
+    const bookshelfPreferencesForm = document.getElementById('bookshelf-preferences-form');
+    const notesPreferencesForm = document.getElementById('notes-preferences-form');
 
     const animatedBooks = new Map();
     const coverImages = new Map();
@@ -43,6 +52,7 @@ if (initialStateElement) {
         controlsOpen: null,
         notesOpen: null,
     };
+    let dragState = null;
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const isMobileViewport = () => window.matchMedia('(max-width: 640px)').matches;
@@ -65,11 +75,23 @@ if (initialStateElement) {
     const MIN_SPINE_FONT_SIZE = 7;     // px — legible at minimum spine width
     const MAX_SPINE_FONT_SIZE = 10;    // px — cap so rotated characters fit within the narrow spine
     const SPINE_FONT_PADDING = 3;      // px — safety gap between font size and spine width
+    const SPINE_FONT_MIN_ADJUSTMENT = 1;
+    const SPINE_FONT_MAX_ADJUSTMENT = 2;
     const MAX_DECORATION_ICON_SIZE = 13; // px — maximum icon font size inside decoration objects
+    const DRAG_MOVEMENT_THRESHOLD = 6;
+    const DEFAULT_ROTATION_MODE = 'upright';
 
     /** Scroll to an element after a short delay to let the panel animate open */
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
         setTimeout(() => document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), delay);
+    };
+    const isDraggingBook = (bookId) => Boolean(dragState && dragState.bookId === bookId);
+    const openPanel = (panel) => {
+        controlsOpen = panel === 'controls';
+        notesOpen = panel === 'notes';
+        bookshelfPreferencesOpen = panel === 'bookshelfPreferences';
+        notesPreferencesOpen = panel === 'notesPreferences';
+        syncPanels();
     };
 
     /** Return the book (or null) whose spine rect contains (x, y) in canvas coordinates */
@@ -136,16 +158,34 @@ if (initialStateElement) {
         return { shelves, slotCount, padding, shelfSpacing, slotWidth };
     };
 
+    const rotationAngle = (mode) => {
+        if (mode === 'side') return Math.PI / 2; // 90°
+        if (mode === 'tilt_left') return -(Math.PI / 9); // -20°
+        if (mode === 'tilt_right') return Math.PI / 9; // 20°
+        return 0;
+    };
+
     const bookTargetRect = (book) => {
         const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
         const shelf = clamp(book.shelfIndex, 0, shelves - 1);
         const pos = clamp(book.positionIndex, 0, slotCount - 1);
-        // Spine proportions: narrow width, tall height
-        const h = Math.max(72, shelfSpacing * 0.82);
-        const w = Math.max(16, Math.min(slotWidth * 0.80, 28));
-        const x = padding + (slotWidth * pos) + (slotWidth - w) / 2;
-        const y = padding + (shelfSpacing * shelf) + (shelfSpacing - h - 10);
-        return { x, y, w, h };
+        const mode = book.rotationMode || DEFAULT_ROTATION_MODE;
+        const uprightH = Math.max(72, shelfSpacing * 0.82);
+        const uprightW = Math.max(24, Math.min(slotWidth * 0.95, 40));
+        const shelfTop = padding + (shelfSpacing * (shelf + 1));
+        const angle = rotationAngle(mode);
+
+        if (mode === 'side') {
+            const h = Math.max(18, Math.min(shelfSpacing * 0.28, 32));
+            const w = Math.max(58, Math.min(slotWidth * 1.9, 86));
+            const x = padding + (slotWidth * pos) + (slotWidth - w) / 2;
+            const y = shelfTop - h - 7;
+            return { x, y, w, h, a: angle };
+        }
+
+        const x = padding + (slotWidth * pos) + (slotWidth - uprightW) / 2;
+        const y = padding + (shelfSpacing * shelf) + (shelfSpacing - uprightH - 10);
+        return { x, y, w: uprightW, h: uprightH, a: angle };
     };
 
     const ensureAnimatedBooks = () => {
@@ -161,6 +201,8 @@ if (initialStateElement) {
                     ty: target.y,
                     tw: target.w,
                     th: target.h,
+                    a: target.a,
+                    ta: target.a,
                 });
                 continue;
             }
@@ -168,6 +210,7 @@ if (initialStateElement) {
             existing.ty = target.y;
             existing.tw = target.w;
             existing.th = target.h;
+            existing.ta = target.a;
         }
 
         for (const id of [...animatedBooks.keys()]) {
@@ -213,32 +256,52 @@ if (initialStateElement) {
         return record;
     };
 
-    // ── Spine drawing (replaces front-cover rendering) ──────────────────────
+    // ── Spine drawing with cover texture ──────────────────────
     const drawBookSpine = (book, anim) => {
         const base = book.spineColor || '#6f4e37';
+        const cover = imageRecord(book.coverUrl);
+        roundRect(anim.x, anim.y, anim.w, anim.h, 3);
+        ctx.fillStyle = base;
+        ctx.fill();
 
-        // Side-lighting gradient for a 3-D spine effect
+        if (cover && cover.loaded && !cover.failed) {
+            const sourceWidth = Math.max(1, Math.floor(cover.image.width * 0.22));
+            const sourceX = Math.floor((cover.image.width - sourceWidth) / 2);
+            ctx.save();
+            roundRect(anim.x, anim.y, anim.w, anim.h, 3);
+            ctx.clip();
+            ctx.drawImage(
+                cover.image,
+                sourceX,
+                0,
+                sourceWidth,
+                cover.image.height,
+                anim.x,
+                anim.y,
+                anim.w,
+                anim.h,
+            );
+            ctx.restore();
+        }
+
         const gradient = ctx.createLinearGradient(anim.x, anim.y, anim.x + anim.w, anim.y);
-        gradient.addColorStop(0,    'rgba(0,0,0,0.35)');
-        gradient.addColorStop(0.18, base);
-        gradient.addColorStop(0.82, base);
-        gradient.addColorStop(1,    'rgba(0,0,0,0.22)');
-
+        gradient.addColorStop(0, 'rgba(0,0,0,0.45)');
+        gradient.addColorStop(0.18, 'rgba(0,0,0,0.08)');
+        gradient.addColorStop(0.82, 'rgba(0,0,0,0.08)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0.3)');
         roundRect(anim.x, anim.y, anim.w, anim.h, 3);
         ctx.fillStyle = gradient;
         ctx.fill();
 
-        // Thin top-edge highlight
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.fillRect(anim.x + 2, anim.y + 1, anim.w - 4, 2);
-
-        // Rotated title text (bottom-to-top, standard spine convention)
         ctx.save();
         ctx.translate(anim.x + anim.w / 2, anim.y + anim.h - 7);
         ctx.rotate(-Math.PI / 2);
-        const fontSize = Math.max(MIN_SPINE_FONT_SIZE, Math.min(MAX_SPINE_FONT_SIZE, anim.w - SPINE_FONT_PADDING));
+        const fontSize = Math.max(
+            MIN_SPINE_FONT_SIZE + SPINE_FONT_MIN_ADJUSTMENT,
+            Math.min(MAX_SPINE_FONT_SIZE + SPINE_FONT_MAX_ADJUSTMENT, anim.w - SPINE_FONT_PADDING),
+        );
         ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.fillStyle = spineTextColor(base);
+        ctx.fillStyle = '#f8fafc';
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
         ctx.fillText((book.title || '').slice(0, 26), 0, 0, anim.h - 18);
@@ -405,37 +468,48 @@ if (initialStateElement) {
             if (!anim) continue;
 
             if (reducedMotion) {
-                anim.x = anim.tx;
-                anim.y = anim.ty;
-                anim.w = anim.tw;
-                anim.h = anim.th;
+                if (!isDraggingBook(book.id)) {
+                    anim.x = anim.tx;
+                    anim.y = anim.ty;
+                    anim.w = anim.tw;
+                    anim.h = anim.th;
+                }
+                anim.a = anim.ta;
             } else {
-                anim.x += (anim.tx - anim.x) * 0.2;
-                anim.y += (anim.ty - anim.y) * 0.2;
-                anim.w += (anim.tw - anim.w) * 0.2;
-                anim.h += (anim.th - anim.h) * 0.2;
+                if (!isDraggingBook(book.id)) {
+                    anim.x += (anim.tx - anim.x) * 0.2;
+                    anim.y += (anim.ty - anim.y) * 0.2;
+                    anim.w += (anim.tw - anim.w) * 0.2;
+                    anim.h += (anim.th - anim.h) * 0.2;
+                }
+                anim.a += (anim.ta - anim.a) * 0.25;
             }
 
-            // Drop shadow
             ctx.save();
+            ctx.translate(anim.x + anim.w / 2, anim.y + anim.h / 2);
+            ctx.rotate(anim.a || 0);
             ctx.shadowColor = 'rgba(0, 0, 0, 0.38)';
             ctx.shadowBlur = 6;
             ctx.shadowOffsetX = 2;
             ctx.shadowOffsetY = 3;
-            roundRect(anim.x, anim.y, anim.w, anim.h, 3);
+            roundRect(-anim.w / 2, -anim.h / 2, anim.w, anim.h, 3);
             ctx.fillStyle = book.spineColor || '#6f4e37';
             ctx.fill();
             ctx.restore();
 
-            // Spine body + text
-            drawBookSpine(book, anim);
+            ctx.save();
+            ctx.translate(anim.x + anim.w / 2, anim.y + anim.h / 2);
+            ctx.rotate(anim.a || 0);
+            drawBookSpine(book, { x: -anim.w / 2, y: -anim.h / 2, w: anim.w, h: anim.h });
+            ctx.restore();
 
-            // Selection glow
             if (selectedBookId === book.id) {
                 ctx.save();
+                ctx.translate(anim.x + anim.w / 2, anim.y + anim.h / 2);
+                ctx.rotate(anim.a || 0);
                 ctx.shadowColor = '#fbbf24';
                 ctx.shadowBlur = 10;
-                roundRect(anim.x, anim.y, anim.w, anim.h, 3);
+                roundRect(-anim.w / 2, -anim.h / 2, anim.w, anim.h, 3);
                 ctx.strokeStyle = '#fbbf24';
                 ctx.lineWidth = 2;
                 ctx.stroke();
@@ -463,9 +537,13 @@ if (initialStateElement) {
 
         controlsPanel.classList.toggle('open', controlsOpen);
         notesPanel.classList.toggle('open', notesOpen);
+        bookshelfPreferencesPanel.classList.toggle('open', bookshelfPreferencesOpen);
+        notesPreferencesPanel.classList.toggle('open', notesPreferencesOpen);
         controlsPanel.setAttribute('aria-hidden', controlsOpen ? 'false' : 'true');
         notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
-        overlayBackdrop.hidden = !(controlsOpen || notesOpen);
+        bookshelfPreferencesPanel.setAttribute('aria-hidden', bookshelfPreferencesOpen ? 'false' : 'true');
+        notesPreferencesPanel.setAttribute('aria-hidden', notesPreferencesOpen ? 'false' : 'true');
+        overlayBackdrop.hidden = !(controlsOpen || notesOpen || bookshelfPreferencesOpen || notesPreferencesOpen);
 
         if (buttonState.controlsOpen !== controlsOpen) {
             toggleControlsButton.setAttribute('aria-expanded', controlsOpen ? 'true' : 'false');
@@ -625,8 +703,10 @@ if (initialStateElement) {
 
         selectedBookLabel.textContent = `${selected.title}${selected.author ? ` by ${selected.author}` : ''}`;
         selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
-        moveBookForm.shelf_index.value = selected.shelfIndex;
-        moveBookForm.position_index.value = selected.positionIndex;
+        const buttons = bookRotationControls.querySelectorAll('button[data-rotation-mode]');
+        for (const button of buttons) {
+            button.classList.toggle('secondary-btn', button.dataset.rotationMode !== (selected.rotationMode || DEFAULT_ROTATION_MODE));
+        }
 
         renderCoverOptions(
             selectedBookCoverPicker,
@@ -704,10 +784,10 @@ if (initialStateElement) {
             selectedBookId = null;
         }
 
-        preferencesForm.bookcase_theme.value = state.preferences.bookcaseTheme;
-        preferencesForm.bookcase_shape.value = state.preferences.bookcaseShape;
-        preferencesForm.notes_theme.value = state.preferences.notesTheme;
-        preferencesForm.shelf_count.value = state.preferences.shelfCount;
+        bookshelfPreferencesForm.bookcase_theme.value = state.preferences.bookcaseTheme;
+        bookshelfPreferencesForm.bookcase_shape.value = state.preferences.bookcaseShape;
+        bookshelfPreferencesForm.shelf_count.value = state.preferences.shelfCount;
+        notesPreferencesForm.notes_theme.value = state.preferences.notesTheme;
 
         renderSelectedBook();
         renderMetadataRefreshList();
@@ -775,32 +855,40 @@ if (initialStateElement) {
         notesPanel.dataset.theme = state.preferences.notesTheme;
     };
 
-    canvas.addEventListener('click', (event) => {
+    const canvasPointFromEvent = (event) => {
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
-        const x = (event.clientX - rect.left) * scaleX;
-        const y = (event.clientY - rect.top) * scaleY;
+        return {
+            x: (event.clientX - rect.left) * scaleX,
+            y: (event.clientY - rect.top) * scaleY,
+        };
+    };
 
-        // Check decoration hit areas first
+    const placementFromPoint = (x, y) => {
+        const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
+        const maxBookSlot = Math.max(0, slotCount - DECORATION_SLOT_BUFFER - 1);
+        const shelfIndex = clamp(Math.floor((y - padding) / shelfSpacing), 0, shelves - 1);
+        const positionIndex = clamp(Math.floor((x - padding) / slotWidth), 0, maxBookSlot);
+        return { shelf_index: shelfIndex, position_index: positionIndex };
+    };
+
+    const handleCanvasTap = (x, y) => {
         const decors = getDecorationRects();
 
         if (hitTest(x, y, decors.preferences)) {
-            controlsOpen = true;
-            syncPanels();
-            scrollToElementAfterDelay('preferences-form');
+            openPanel('bookshelfPreferences');
+            scrollToElementAfterDelay('bookshelf-preferences-form');
             return;
         }
 
         if (hitTest(x, y, decors.notes)) {
-            notesOpen = true;
-            syncPanels();
+            openPanel('notes');
             return;
         }
 
         if (hitTest(x, y, decors.addBook)) {
-            controlsOpen = true;
-            syncPanels();
+            openPanel('controls');
             scrollToElementAfterDelay('book-search-form');
             return;
         }
@@ -810,8 +898,7 @@ if (initialStateElement) {
         if (book) {
             selectedBookId = book.id;
             renderSelectedBook();
-            controlsOpen = true;
-            syncPanels();
+            openPanel('controls');
             scrollToElementAfterDelay('selected-book-label');
             return;
         }
@@ -819,21 +906,87 @@ if (initialStateElement) {
         // Click on empty shelf — close panels
         selectedBookId = null;
         renderSelectedBook();
-        controlsOpen = false;
-        notesOpen = false;
-        syncPanels();
+        openPanel(null);
+    };
+
+    canvas.addEventListener('pointerdown', (event) => {
+        const { x, y } = canvasPointFromEvent(event);
+        const book = findBookAtPoint(x, y);
+        if (!book) {
+            dragState = null;
+            handleCanvasTap(x, y);
+            return;
+        }
+
+        const anim = animatedBooks.get(book.id);
+        if (!anim) return;
+
+        selectedBookId = book.id;
+        renderSelectedBook();
+        openPanel('controls');
+
+        dragState = {
+            pointerId: event.pointerId,
+            bookId: book.id,
+            startX: x,
+            startY: y,
+            offsetX: x - anim.x,
+            offsetY: y - anim.y,
+            moved: false,
+        };
+        canvas.setPointerCapture(event.pointerId);
     });
 
-    canvas.addEventListener('mousemove', (event) => {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        const x = (event.clientX - rect.left) * scaleX;
-        const y = (event.clientY - rect.top) * scaleY;
+    canvas.addEventListener('pointermove', (event) => {
+        const { x, y } = canvasPointFromEvent(event);
+
+        if (dragState && dragState.pointerId === event.pointerId) {
+            const anim = animatedBooks.get(dragState.bookId);
+            if (!anim) {
+                dragState = null;
+                return;
+            }
+            dragState.moved = dragState.moved
+                || Math.hypot(x - dragState.startX, y - dragState.startY) > DRAG_MOVEMENT_THRESHOLD;
+            if (dragState.moved) {
+                anim.x = x - dragState.offsetX;
+                anim.y = y - dragState.offsetY;
+            }
+            canvas.style.cursor = 'grabbing';
+            return;
+        }
 
         const decors = getDecorationRects();
         const overDecor = hitTest(x, y, decors.preferences) || hitTest(x, y, decors.notes) || hitTest(x, y, decors.addBook);
         canvas.style.cursor = (overDecor || findBookAtPoint(x, y) !== null) ? 'pointer' : 'default';
+    });
+
+    canvas.addEventListener('pointerup', async (event) => {
+        if (!dragState || dragState.pointerId !== event.pointerId) {
+            return;
+        }
+
+        const { x, y } = canvasPointFromEvent(event);
+        const { bookId, moved } = dragState;
+        dragState = null;
+        canvas.releasePointerCapture(event.pointerId);
+
+        if (!moved) {
+            selectedBookId = bookId;
+            renderSelectedBook();
+            openPanel('controls');
+            return;
+        }
+
+        const selected = state.books.find((book) => book.id === bookId);
+        if (!selected) return;
+
+        const placement = placementFromPoint(x, y);
+        const updated = await fetchJson(`/api/books/${bookId}/position`, 'PATCH', {
+            ...placement,
+            rotation_mode: selected.rotationMode || DEFAULT_ROTATION_MODE,
+        });
+        applyState(updated);
     });
 
     bookSearchForm.addEventListener('submit', async (event) => {
@@ -918,13 +1071,16 @@ if (initialStateElement) {
         metadataRefreshFeedback.textContent = 'All Open Library books were refreshed.';
     });
 
-    moveBookForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (!selectedBookId) return;
+    bookRotationControls.addEventListener('click', async (event) => {
+        const target = event.target.closest('button[data-rotation-mode]');
+        if (!target || !selectedBookId) return;
+        const selected = state.books.find((book) => book.id === selectedBookId);
+        if (!selected) return;
 
         const updated = await fetchJson(`/api/books/${selectedBookId}/position`, 'PATCH', {
-            shelf_index: Number(moveBookForm.shelf_index.value),
-            position_index: Number(moveBookForm.position_index.value),
+            shelf_index: selected.shelfIndex,
+            position_index: selected.positionIndex,
+            rotation_mode: target.dataset.rotationMode,
         });
 
         applyState(updated);
@@ -951,18 +1107,31 @@ if (initialStateElement) {
         addNoteForm.reset();
     });
 
-    preferencesForm.addEventListener('submit', async (event) => {
+    bookshelfPreferencesForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
         const updated = await fetchJson('/api/preferences', 'PUT', {
-            bookcase_theme: preferencesForm.bookcase_theme.value,
-            bookcase_shape: preferencesForm.bookcase_shape.value,
-            notes_theme: preferencesForm.notes_theme.value,
-            shelf_count: Number(preferencesForm.shelf_count.value),
+            bookcase_theme: bookshelfPreferencesForm.bookcase_theme.value,
+            bookcase_shape: bookshelfPreferencesForm.bookcase_shape.value,
+            notes_theme: state.preferences.notesTheme,
+            shelf_count: Number(bookshelfPreferencesForm.shelf_count.value),
         });
 
         applyState(updated);
         setCanvasSize();
+    });
+
+    notesPreferencesForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const updated = await fetchJson('/api/preferences', 'PUT', {
+            bookcase_theme: state.preferences.bookcaseTheme,
+            bookcase_shape: state.preferences.bookcaseShape,
+            notes_theme: notesPreferencesForm.notes_theme.value,
+            shelf_count: Number(state.preferences.shelfCount),
+        });
+
+        applyState(updated);
     });
 
     toggleControlsButton.addEventListener('click', () => {
@@ -997,9 +1166,29 @@ if (initialStateElement) {
         syncPanels();
     });
 
+    openBookshelfPreferencesButton.addEventListener('click', () => {
+        openPanel('bookshelfPreferences');
+    });
+
+    openNotesPreferencesButton.addEventListener('click', () => {
+        openPanel('notesPreferences');
+    });
+
+    closeBookshelfPreferencesButton.addEventListener('click', () => {
+        bookshelfPreferencesOpen = false;
+        syncPanels();
+    });
+
+    closeNotesPreferencesButton.addEventListener('click', () => {
+        notesPreferencesOpen = false;
+        syncPanels();
+    });
+
     overlayBackdrop.addEventListener('click', () => {
         controlsOpen = false;
         notesOpen = false;
+        bookshelfPreferencesOpen = false;
+        notesPreferencesOpen = false;
         syncPanels();
     });
 

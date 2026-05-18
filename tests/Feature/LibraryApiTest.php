@@ -75,6 +75,7 @@ class LibraryApiTest extends TestCase
         $createResponse->assertJsonPath('books.0.author', 'Frank Herbert');
         $createResponse->assertJsonPath('books.0.publisher', 'Ace');
         $createResponse->assertJsonPath('books.0.coverId', 202);
+        $createResponse->assertJsonPath('books.0.rotationMode', 'upright');
         $createResponse->assertJsonCount(3, 'books.0.coverOptions');
 
         /** @var Book $book */
@@ -92,6 +93,7 @@ class LibraryApiTest extends TestCase
             'book_id' => $book->id,
             'shelf_index' => 0,
             'position_index' => 0,
+            'rotation_mode' => 'upright',
         ]);
 
         $this->patchJson("/api/books/{$book->id}/cover", [
@@ -101,14 +103,17 @@ class LibraryApiTest extends TestCase
         $moveResponse = $this->patchJson("/api/books/{$book->id}/position", [
             'shelf_index' => 2,
             'position_index' => 1,
+            'rotation_mode' => 'tilt_left',
         ]);
 
         $moveResponse->assertOk();
+        $moveResponse->assertJsonPath('books.0.rotationMode', 'tilt_left');
 
         /** @var BookPlacement $placement */
         $placement = BookPlacement::query()->where('book_id', $book->id)->firstOrFail();
         $this->assertSame(2, $placement->shelf_index);
         $this->assertSame(0, $placement->position_index);
+        $this->assertSame('tilt_left', $placement->rotation_mode);
 
         $this->deleteJson("/api/books/{$book->id}")
             ->assertOk();

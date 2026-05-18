@@ -19,6 +19,8 @@ use Illuminate\Validation\Rule;
 
 class LibraryController extends Controller
 {
+    private const ROTATION_MODES = ['upright', 'side', 'tilt_left', 'tilt_right'];
+
     public function __construct(
         private readonly LibraryStateService $libraryState,
         private readonly OpenLibraryService $openLibrary,
@@ -68,6 +70,7 @@ class LibraryController extends Controller
             'spine_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'shelf_index' => ['nullable', 'integer', 'min:0', 'max:20'],
             'position_index' => ['nullable', 'integer', 'min:0', 'max:250'],
+            'rotation_mode' => ['nullable', Rule::in(self::ROTATION_MODES)],
             'open_library_work_key' => ['nullable', 'string', 'max:60'],
             'open_library_edition_key' => ['nullable', 'string', 'max:60'],
             'open_library_cover_id' => ['nullable', 'integer', 'min:1'],
@@ -99,6 +102,7 @@ class LibraryController extends Controller
             $book,
             (int) ($data['shelf_index'] ?? 0),
             (int) ($data['position_index'] ?? PHP_INT_MAX),
+            $data['rotation_mode'] ?? null,
         );
 
         return response()->json($this->libraryState->payload($user));
@@ -112,9 +116,15 @@ class LibraryController extends Controller
         $data = $request->validate([
             'shelf_index' => ['required', 'integer', 'min:0', 'max:20'],
             'position_index' => ['required', 'integer', 'min:0', 'max:250'],
+            'rotation_mode' => ['nullable', Rule::in(self::ROTATION_MODES)],
         ]);
 
-        $this->placeBook($book, (int) $data['shelf_index'], (int) $data['position_index']);
+        $this->placeBook(
+            $book,
+            (int) $data['shelf_index'],
+            (int) $data['position_index'],
+            $data['rotation_mode'] ?? null,
+        );
 
         return response()->json($this->libraryState->payload($user));
     }
@@ -280,13 +290,14 @@ class LibraryController extends Controller
         return response()->json($this->libraryState->payload($user));
     }
 
-    private function placeBook(Book $book, int $targetShelf, int $targetPosition): void
+    private function placeBook(Book $book, int $targetShelf, int $targetPosition, ?string $rotationMode = null): void
     {
-        DB::transaction(function () use ($book, $targetShelf, $targetPosition): void {
+        DB::transaction(function () use ($book, $targetShelf, $targetPosition, $rotationMode): void {
             $targetShelf = max(0, $targetShelf);
             $currentPlacement = BookPlacement::query()
                 ->where('book_id', $book->id)
                 ->first();
+            $resolvedRotationMode = $rotationMode;
 
             if ($currentPlacement) {
                 BookPlacement::query()
@@ -299,6 +310,10 @@ class LibraryController extends Controller
                     $targetPosition -= 1;
                 }
 
+                if (! $resolvedRotationMode) {
+                    $resolvedRotationMode = $currentPlacement->rotation_mode ?: 'upright';
+                }
+
                 $currentPlacement->delete();
             }
 
@@ -308,6 +323,7 @@ class LibraryController extends Controller
                 ->count();
 
             $targetPosition = max(0, min($targetPosition, $booksOnShelf));
+            $resolvedRotationMode = $resolvedRotationMode ?: 'upright';
 
             BookPlacement::query()
                 ->where('user_id', $book->user_id)
@@ -320,6 +336,7 @@ class LibraryController extends Controller
                 'user_id' => $book->user_id,
                 'shelf_index' => $targetShelf,
                 'position_index' => $targetPosition,
+                'rotation_mode' => $resolvedRotationMode,
             ]);
         });
     }

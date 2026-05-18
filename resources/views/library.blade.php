@@ -71,48 +71,27 @@
                     <button id="remove-book" type="button" class="danger-btn">Remove selected</button>
                 </section>
 
-                <section>
-                    <h2>Preferences</h2>
-                    <form id="preferences-form" class="stacked-form">
-                        <label>Bookcase theme
-                            <select name="bookcase_theme">
-                                <option value="oak">Oak</option>
-                                <option value="walnut">Walnut</option>
-                                <option value="midnight">Midnight</option>
-                            </select>
-                        </label>
-                        <label>Bookcase shape
-                            <select name="bookcase_shape">
-                                <option value="classic">Classic</option>
-                                <option value="minimal">Minimal</option>
-                                <option value="arched">Arched</option>
-                            </select>
-                        </label>
-                        <label>Notes theme
-                            <select name="notes_theme">
-                                <option value="paper">Paper</option>
-                                <option value="mint">Mint</option>
-                                <option value="dark">Dark</option>
-                            </select>
-                        </label>
-                        <label>Shelves <input name="shelf_count" type="number" min="2" max="8"
-                                value="4"></label>
-                        <button type="submit">Save preferences</button>
-                    </form>
-                </section>
+            <section>
+                <h2>Selected book</h2>
+                <p id="selected-book-label">No book selected</p>
+                <p id="selected-book-meta" class="selected-book-meta"></p>
+                <div>
+                    <p class="cover-picker-label">Displayed cover</p>
+                    <div id="selected-book-cover-picker" class="cover-picker" aria-live="polite"></div>
+                </div>
+                <div id="book-rotation-controls" class="metadata-refresh-actions">
+                    <button type="button" data-rotation-mode="upright">Upright</button>
+                    <button type="button" data-rotation-mode="side">Lay on side</button>
+                    <button type="button" data-rotation-mode="tilt_left">Tilt left</button>
+                    <button type="button" data-rotation-mode="tilt_right">Tilt right</button>
+                </div>
+                <button id="remove-book" type="button" class="danger-btn">Remove selected</button>
+            </section>
 
-                <section>
-                    <h2>Metadata refresh</h2>
-                    <p id="metadata-refresh-feedback" class="hint" aria-live="polite">Select one or more saved books
-                        to refresh their cached Open Library metadata.</p>
-                    <div id="metadata-refresh-list" class="metadata-refresh-list" aria-live="polite"></div>
-                    <div class="metadata-refresh-actions">
-                        <button id="refresh-selected-books" type="button">Refresh selected</button>
-                        <button id="refresh-all-books" type="button" class="secondary-btn">Refresh all Open Library
-                            books</button>
-                    </div>
-                </section>
-            </aside>
+            <section>
+                <h2>Bookshelf preferences</h2>
+                <button id="open-bookshelf-preferences" type="button">Open bookshelf preferences</button>
+            </section>
 
             <section id="notes-panel" class="notes-panel" aria-label="Want to read notes" aria-hidden="true">
                 <div class="notes-inner">
@@ -134,16 +113,67 @@
             </section>
         </main>
 
-        <div id="overlay-backdrop" class="overlay-backdrop" hidden></div>
-        <button id="toggle-controls" type="button" class="floating-btn floating-btn--controls"
-            aria-controls="controls-panel" aria-expanded="false" aria-label="Open controls panel">
-            Controls
-        </button>
-        <button id="toggle-notes" type="button" class="floating-btn floating-btn--notes"
-            aria-controls="notes-panel" aria-expanded="false" aria-label="Open notes panel">
-            Notes
-        </button>
-    </div>
+        <section id="notes-panel" class="notes-panel" aria-label="Want to read notes" aria-hidden="true">
+            <div class="notes-inner">
+                <div class="panel-header">
+                    <h2>Want to read notes</h2>
+                    <button type="button" id="close-notes" class="panel-close" aria-label="Close notes">Close</button>
+                </div>
+                <form id="add-note-form" class="stacked-form">
+                    <label>Title <input name="title" required maxlength="180"></label>
+                    <label>Author <input name="author" maxlength="180"></label>
+                    <label>Note <textarea name="note" rows="3" maxlength="800"></textarea></label>
+                    <button type="submit">Add note</button>
+                </form>
+                <button id="open-notes-preferences" type="button" class="secondary-btn">Notes preferences</button>
+                <ul id="notes-list" class="notes-list" aria-live="polite"></ul>
+            </div>
+        </section>
+
+        <aside id="bookshelf-preferences-panel" class="controls-panel" aria-label="Bookshelf preferences" aria-hidden="true">
+            <div class="panel-header">
+                <h2>Bookshelf preferences</h2>
+                <button type="button" id="close-bookshelf-preferences" class="panel-close" aria-label="Close bookshelf preferences">Close</button>
+            </div>
+            <form id="bookshelf-preferences-form" class="stacked-form">
+                <label>Bookcase theme
+                    <select name="bookcase_theme">
+                        <option value="oak">Oak</option>
+                        <option value="walnut">Walnut</option>
+                        <option value="midnight">Midnight</option>
+                    </select>
+                </label>
+                <label>Bookcase shape
+                    <select name="bookcase_shape">
+                        <option value="classic">Classic</option>
+                        <option value="minimal">Minimal</option>
+                        <option value="arched">Arched</option>
+                    </select>
+                </label>
+                <label>Shelves <input name="shelf_count" type="number" min="2" max="8" value="4"></label>
+                <button type="submit">Save bookshelf preferences</button>
+            </form>
+        </aside>
+
+        <aside id="notes-preferences-panel" class="notes-panel" aria-label="Notes preferences" aria-hidden="true">
+            <div class="notes-inner">
+                <div class="panel-header">
+                    <h2>Notes preferences</h2>
+                    <button type="button" id="close-notes-preferences" class="panel-close" aria-label="Close notes preferences">Close</button>
+                </div>
+                <form id="notes-preferences-form" class="stacked-form">
+                    <label>Notes theme
+                        <select name="notes_theme">
+                            <option value="paper">Paper</option>
+                            <option value="mint">Mint</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </label>
+                    <button type="submit">Save notes preferences</button>
+                </form>
+            </div>
+        </aside>
+    </main>
 
     <script id="initial-state" type="application/json">@json($initialState)</script>
 </body>
