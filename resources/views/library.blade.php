@@ -97,7 +97,7 @@
                 </form>
             </section>
 
-            <section>
+            <section id="selected-book-section">
                 <h2>Selected book</h2>
                 <p id="selected-book-label">No book selected</p>
                 <p id="selected-book-meta" class="selected-book-meta"></p>

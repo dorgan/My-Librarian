@@ -126,6 +126,7 @@ if (initialStateElement) {
     const selectedBookLabel = document.getElementById('selected-book-label');
     const selectedBookMeta = document.getElementById('selected-book-meta');
     const selectedBookCoverPicker = document.getElementById('selected-book-cover-picker');
+    const selectedBookSection = document.getElementById('selected-book-section');
     const notesList = document.getElementById('notes-list');
     const bookshelfSearchForm = document.getElementById('bookshelf-search-form');
     const bookshelfSearchFeedback = document.getElementById('bookshelf-search-feedback');
@@ -978,6 +979,12 @@ if (initialStateElement) {
                     selectedCoverId: result.cover?.id ?? null,
                     payload: null,
                 };
+                
+                // Clear the search input and results
+                bookSearchForm.query.value = '';
+                searchResults = [];
+                bookSearchResults.innerHTML = '';
+                
                 syncAddBookForm();
                 renderSearchResults();
                 bookSearchFeedback.textContent = 'Loading full Open Library metadata and cover choices…';
@@ -1018,9 +1025,11 @@ if (initialStateElement) {
             syncOrientationControlState(null);
             applyBookOrientationButton.disabled = true;
             renderCoverOptions(selectedBookCoverPicker, [], null, () => {}, 'Select a book to swap covers.');
+            selectedBookSection.style.display = 'none';
             return;
         }
 
+        selectedBookSection.style.display = 'block';
         selectedBookLabel.textContent = `${selected.title}${selected.author ? ` by ${selected.author}` : ''}`;
         selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
         selectedBookOrientation.value = selected.rotationMode || DEFAULT_ROTATION_MODE;
