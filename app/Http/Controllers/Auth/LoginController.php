@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PasskeyCredential;
 use App\Models\User;
 use App\Services\MagicLoginService;
+use App\Support\WebAuthnData;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -15,9 +16,7 @@ use Illuminate\Support\Str;
 
 class LoginController extends Controller
 {
-    public function __construct(private readonly MagicLoginService $magicLogin)
-    {
-    }
+    public function __construct(private readonly MagicLoginService $magicLogin) {}
 
     public function create(): View
     {
@@ -53,7 +52,7 @@ class LoginController extends Controller
 
         abort_unless($user && $user->passkeyCredentials()->exists(), 422);
 
-        $challenge = $this->base64urlEncode(random_bytes(32));
+        $challenge = WebAuthnData::base64urlEncode(random_bytes(32));
 
         $request->session()->put('passkey.login', [
             'challenge' => $challenge,
@@ -63,14 +62,14 @@ class LoginController extends Controller
 
         $allowCredentials = $user->passkeyCredentials
             ->map(fn (PasskeyCredential $credential): array => [
-                'id' => $this->bytesFromBase64url($credential->credential_id),
+                'id' => WebAuthnData::bytesFromBase64url($credential->credential_id),
                 'type' => 'public-key',
                 'transports' => $credential->transports ?? ['internal'],
             ])
             ->all();
 
         return response()->json([
-            'challenge' => $this->bytesFromBase64url($challenge),
+            'challenge' => WebAuthnData::bytesFromBase64url($challenge),
             'rpId' => parse_url(config('app.url'), PHP_URL_HOST),
             'allowCredentials' => $allowCredentials,
             'userVerification' => 'preferred',
@@ -104,7 +103,12 @@ class LoginController extends Controller
 
         abort_unless($credential instanceof PasskeyCredential, 422);
 
-        $this->assertChallenge($data['response']['clientDataJSON'], $sessionState['challenge'], 'webauthn.get');
+        WebAuthnData::assertClientDataChallenge(
+            $data['response']['clientDataJSON'],
+            $sessionState['challenge'],
+            'webauthn.get',
+            $this->expectedOrigin(),
+        );
 
         Auth::login($user, true);
         $request->session()->regenerate();
@@ -120,37 +124,8 @@ class LoginController extends Controller
         ]);
     }
 
-    private function assertChallenge(string $encodedClientDataJson, string $expectedChallenge, string $expectedType): void
+    private function expectedOrigin(): string
     {
-        $decoded = $this->base64urlDecode($encodedClientDataJson);
-        $clientData = json_decode($decoded, true);
-        abort_unless(is_array($clientData), 422);
-
-        abort_unless(($clientData['type'] ?? null) === $expectedType, 422);
-        abort_unless(($clientData['challenge'] ?? null) === $expectedChallenge, 422);
-
-        $origin = parse_url(config('app.url'), PHP_URL_SCHEME).'://'.parse_url(config('app.url'), PHP_URL_HOST);
-        abort_unless(($clientData['origin'] ?? null) === $origin, 422);
-    }
-
-    /** @return array<int, int> */
-    private function bytesFromBase64url(string $value): array
-    {
-        return array_values(unpack('C*', $this->base64urlDecode($value)) ?: []);
-    }
-
-    private function base64urlEncode(string $value): string
-    {
-        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
-    }
-
-    private function base64urlDecode(string $value): string
-    {
-        $padding = strlen($value) % 4;
-        if ($padding > 0) {
-            $value .= str_repeat('=', 4 - $padding);
-        }
-
-        return base64_decode(strtr($value, '-_', '+/'), true) ?: '';
+        return parse_url(config('app.url'), PHP_URL_SCHEME).'://'.parse_url(config('app.url'), PHP_URL_HOST);
     }
 }
