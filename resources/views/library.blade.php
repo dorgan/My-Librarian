@@ -120,6 +120,28 @@
                 <button id="remove-book" type="button" class="danger-btn">Remove selected</button>
             </section>
 
+            <section id="shelf-divider-section">
+                <h2>Shelf sections</h2>
+                <p class="hint">Split shelves with little decor like bookends, fake plants, and knick-knacks.</p>
+                <form id="add-shelf-divider-form" class="stacked-form">
+                    <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
+                    <label>Position <input name="position_index" type="number" min="0" value="0"></label>
+                    <label>Divider style
+                        <select name="style">
+                            <option value="bookend">Bookend</option>
+                            <option value="plant">Fake plant</option>
+                            <option value="knick_knack">Knick-knack</option>
+                        </select>
+                    </label>
+                    <button type="submit">Add shelf divider</button>
+                </form>
+                <p id="shelf-divider-feedback" class="hint" aria-live="polite">Tap a divider on the shelf to remove it.</p>
+                <div id="selected-divider-controls" class="selected-divider-controls" hidden>
+                    <p id="selected-divider-label" class="selected-book-meta">No divider selected</p>
+                    <button id="remove-divider" type="button" class="danger-btn">Remove divider</button>
+                </div>
+            </section>
+
             <section>
                 <h2>Metadata refresh</h2>
                 <p id="metadata-refresh-feedback" class="hint" aria-live="polite"></p>

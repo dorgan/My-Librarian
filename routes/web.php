@@ -70,6 +70,8 @@ Route::middleware('auth')->group(function (): void {
         Route::patch('/books/{book}/position', [LibraryController::class, 'moveBook']);
         Route::patch('/books/{book}/cover', [LibraryController::class, 'updateBookCover']);
         Route::delete('/books/{book}', [LibraryController::class, 'destroyBook']);
+        Route::post('/shelf-dividers', [LibraryController::class, 'storeShelfDivider']);
+        Route::delete('/shelf-dividers/{divider}', [LibraryController::class, 'destroyShelfDivider']);
         Route::post('/notes', [LibraryController::class, 'storeNote']);
         Route::patch('/notes/{note}', [LibraryController::class, 'updateNote']);
         Route::delete('/notes/{note}', [LibraryController::class, 'destroyNote']);

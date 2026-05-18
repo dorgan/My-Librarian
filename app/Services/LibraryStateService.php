@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Book;
+use App\Models\ShelfDivider;
 use App\Models\User;
 use App\Models\UserPreference;
 use App\Models\WantToReadNote;
@@ -34,6 +35,19 @@ class LibraryStateService
                 'note' => $note->note,
             ]);
 
+        $shelfDividers = ShelfDivider::query()
+            ->where('user_id', $user->id)
+            ->orderBy('shelf_index')
+            ->orderBy('position_index')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (ShelfDivider $divider): array => [
+                'id' => $divider->id,
+                'shelfIndex' => $divider->shelf_index,
+                'positionIndex' => $divider->position_index,
+                'style' => $divider->style,
+            ]);
+
         $preference = UserPreference::query()->firstOrCreate(
             ['user_id' => $user->id],
             [
@@ -47,6 +61,7 @@ class LibraryStateService
         return [
             'books' => $books,
             'notes' => $notes,
+            'shelfDividers' => $shelfDividers,
             'preferences' => [
                 'bookcaseTheme' => $preference->bookcase_theme,
                 'bookcaseShape' => $preference->bookcase_shape,

@@ -245,6 +245,12 @@ button:hover {
     flex: 1;
 }
 
+.selected-divider-controls {
+    margin-top: 0.65rem;
+    display: grid;
+    gap: 0.5rem;
+}
+
 .search-results {
     display: grid;
     gap: 0.6rem;

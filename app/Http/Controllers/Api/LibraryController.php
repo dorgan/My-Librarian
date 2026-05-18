@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Book;
 use App\Models\BookPlacement;
+use App\Models\ShelfDivider;
 use App\Models\User;
 use App\Models\UserPreference;
 use App\Models\WantToReadNote;
@@ -18,6 +19,8 @@ use Illuminate\Validation\Rule;
 class LibraryController extends Controller
 {
     private const ROTATION_MODES = ['upright', 'side', 'tilt_left', 'tilt_right'];
+
+    private const DIVIDER_STYLES = ['bookend', 'plant', 'knick_knack'];
 
     public function __construct(
         private readonly LibraryStateService $libraryState,
@@ -233,7 +236,7 @@ class LibraryController extends Controller
                     ->decrement('position_index');
             }
 
-            $book->delete();
+            $book->delete([]);
 
             if ($placement) {
                 $this->normalizeShelfRotationModes($book->user_id, $placement->shelf_index);
@@ -295,8 +298,56 @@ class LibraryController extends Controller
                 ->where('position_index', '>', $note->position_index)
                 ->decrement('position_index');
 
-            $note->delete();
+            $note->delete([]);
         });
+
+        return response()->json($this->libraryState->payload($user));
+    }
+
+    public function storeShelfDivider(Request $request): JsonResponse
+    {
+        $user = $this->userFromRequest($request);
+
+        $data = $request->validate([
+            'shelf_index' => ['required', 'integer', 'min:0', 'max:20'],
+            'position_index' => ['required', 'integer', 'min:0', 'max:250'],
+            'style' => ['required', Rule::in(self::DIVIDER_STYLES)],
+        ]);
+
+        $shelfIndex = (int) $data['shelf_index'];
+        $bookCount = (int) BookPlacement::query()
+            ->where('user_id', $user->id)
+            ->where('shelf_index', $shelfIndex)
+            ->count();
+
+        $positionIndex = max(0, min((int) $data['position_index'], $bookCount));
+
+        abort_if(
+            ShelfDivider::query()
+                ->where('user_id', $user->id)
+                ->where('shelf_index', $shelfIndex)
+                ->where('position_index', $positionIndex)
+                ->exists(),
+            422,
+            'A shelf divider already exists at that position.'
+        );
+
+        ShelfDivider::query()->create([
+            'user_id' => $user->id,
+            'shelf_index' => $shelfIndex,
+            'position_index' => $positionIndex,
+            'style' => $data['style'],
+        ]);
+
+        return response()->json($this->libraryState->payload($user));
+    }
+
+    public function destroyShelfDivider(Request $request, ShelfDivider $divider): JsonResponse
+    {
+        $user = $this->userFromRequest($request);
+        $this->assertOwnership($divider->user_id === $user->id);
+
+        $divider->delete([]);
 
         return response()->json($this->libraryState->payload($user));
     }
@@ -350,7 +401,7 @@ class LibraryController extends Controller
                     $resolvedRotationMode = $currentPlacement->rotation_mode ?: 'upright';
                 }
 
-                $currentPlacement->delete();
+                $currentPlacement->delete([]);
             }
 
             $booksOnShelf = (int) BookPlacement::query()

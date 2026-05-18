@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Book;
 use App\Models\BookPlacement;
+use App\Models\ShelfDivider;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
@@ -248,6 +249,55 @@ class LibraryApiTest extends TestCase
         $this->deleteJson("/api/books/{$book->id}")->assertNotFound();
     }
 
+    public function test_shelf_divider_can_be_added_and_removed(): void
+    {
+        $user = $this->signIn('reader@example.com');
+
+        $createResponse = $this->postJson('/api/shelf-dividers', [
+            'shelf_index' => 1,
+            'position_index' => 2,
+            'style' => 'plant',
+        ]);
+
+        $createResponse->assertOk();
+        $createResponse->assertJsonCount(1, 'shelfDividers');
+        $createResponse->assertJsonPath('shelfDividers.0.shelfIndex', 1);
+        $createResponse->assertJsonPath('shelfDividers.0.positionIndex', 0);
+        $createResponse->assertJsonPath('shelfDividers.0.style', 'plant');
+
+        $this->assertDatabaseHas('shelf_dividers', [
+            'user_id' => $user->id,
+            'shelf_index' => 1,
+            'position_index' => 0,
+            'style' => 'plant',
+        ]);
+
+        /** @var ShelfDivider $divider */
+        $divider = ShelfDivider::query()->firstOrFail();
+
+        $this->deleteJson("/api/shelf-dividers/{$divider->id}")
+            ->assertOk()
+            ->assertJsonCount(0, 'shelfDividers');
+
+        $this->assertDatabaseMissing('shelf_dividers', ['id' => $divider->id]);
+    }
+
+    public function test_user_cannot_delete_another_users_shelf_divider(): void
+    {
+        $owner = User::factory()->create();
+
+        $divider = ShelfDivider::query()->create([
+            'user_id' => $owner->id,
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'style' => 'bookend',
+        ]);
+
+        $this->signIn('other@example.com');
+
+        $this->deleteJson("/api/shelf-dividers/{$divider->id}")->assertNotFound();
+    }
+
     public function test_notes_and_preferences_are_scoped_per_user(): void
     {
         $firstUser = $this->signIn('first@example.com');
@@ -271,6 +321,7 @@ class LibraryApiTest extends TestCase
         $state = $this->getJson('/api/library-state')->assertOk()->json();
 
         $this->assertSame([], $state['notes']);
+        $this->assertSame([], $state['shelfDividers']);
         $this->assertSame('oak', $state['preferences']['bookcaseTheme']);
         $this->assertNotSame($firstUser->id, $secondUser->id);
     }
