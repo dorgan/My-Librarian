@@ -24,8 +24,7 @@ class LibraryController extends Controller
     public function __construct(
         private readonly LibraryStateService $libraryState,
         private readonly OpenLibraryService $openLibrary,
-    ) {
-    }
+    ) {}
 
     public function state(): JsonResponse
     {
@@ -203,6 +202,10 @@ class LibraryController extends Controller
             }
 
             $book->delete();
+
+            if ($placement) {
+                $this->normalizeShelfRotationModes($book->user_id, $placement->shelf_index);
+            }
         });
 
         return response()->json($this->libraryState->payload($user));
@@ -298,6 +301,7 @@ class LibraryController extends Controller
                 ->where('book_id', $book->id)
                 ->first();
             $resolvedRotationMode = $rotationMode;
+            $previousShelfIndex = $currentPlacement?->shelf_index;
 
             if ($currentPlacement) {
                 BookPlacement::query()
@@ -338,7 +342,34 @@ class LibraryController extends Controller
                 'position_index' => $targetPosition,
                 'rotation_mode' => $resolvedRotationMode,
             ]);
+
+            $this->normalizeShelfRotationModes($book->user_id, $targetShelf);
+
+            if ($previousShelfIndex !== null && $previousShelfIndex !== $targetShelf) {
+                $this->normalizeShelfRotationModes($book->user_id, $previousShelfIndex);
+            }
         });
+    }
+
+    private function normalizeShelfRotationModes(int $userId, int $shelfIndex): void
+    {
+        $lastPosition = BookPlacement::query()
+            ->where('user_id', $userId)
+            ->where('shelf_index', $shelfIndex)
+            ->max('position_index');
+
+        if (! is_numeric($lastPosition)) {
+            return;
+        }
+
+        $lastPosition = (int) $lastPosition;
+
+        BookPlacement::query()
+            ->where('user_id', $userId)
+            ->where('shelf_index', $shelfIndex)
+            ->where('position_index', $lastPosition)
+            ->where('rotation_mode', 'tilt_right')
+            ->update(['rotation_mode' => 'upright']);
     }
 
     private function currentUser(): User

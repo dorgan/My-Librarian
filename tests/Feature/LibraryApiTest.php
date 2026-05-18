@@ -197,6 +197,76 @@ class LibraryApiTest extends TestCase
         ]);
     }
 
+    public function test_rightmost_book_cannot_remain_tilted_right(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'demo@my-library.local',
+        ]);
+
+        $leftBook = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Left Book',
+            'author' => 'Author One',
+            'publisher' => 'Pub One',
+            'spine_color' => '#123456',
+        ]);
+
+        $rightBook = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Right Book',
+            'author' => 'Author Two',
+            'publisher' => 'Pub Two',
+            'spine_color' => '#654321',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $leftBook->id,
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'rotation_mode' => 'upright',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $rightBook->id,
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 1,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $this->patchJson("/api/books/{$leftBook->id}/position", [
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'rotation_mode' => 'tilt_right',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('book_placements', [
+            'book_id' => $leftBook->id,
+            'rotation_mode' => 'tilt_right',
+        ]);
+
+        $response = $this->deleteJson("/api/books/{$rightBook->id}")
+            ->assertOk();
+
+        $leftBookState = collect($response->json('books'))->firstWhere('id', $leftBook->id);
+        $this->assertIsArray($leftBookState);
+        $this->assertSame('upright', $leftBookState['rotationMode']);
+
+        $this->assertDatabaseHas('book_placements', [
+            'book_id' => $leftBook->id,
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $this->patchJson("/api/books/{$leftBook->id}/position", [
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'rotation_mode' => 'tilt_right',
+        ])->assertOk()->assertJsonPath('books.0.rotationMode', 'upright');
+    }
+
     public function test_refresh_metadata_updates_selected_books(): void
     {
         $user = User::query()->create([

@@ -84,6 +84,8 @@ if (initialStateElement) {
     const DEFAULT_ROTATION_MODE = 'upright';
     const DOUBLE_ACTIVATION_MAX_MS = 350;
     const DOUBLE_ACTIVATION_MAX_DISTANCE = 24;
+    const BOOK_TOUCH_GAP = 1;
+    const BOOK_LEFT_INSET = 2;
 
     /** Scroll to an element after a short delay to let the panel animate open */
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
@@ -188,6 +190,56 @@ if (initialStateElement) {
         return 0;
     };
 
+    const rotationProfile = (width, height, angle) => {
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
+        const corners = [
+            { name: 'topLeft', x: -halfWidth, y: -halfHeight },
+            { name: 'topRight', x: halfWidth, y: -halfHeight },
+            { name: 'bottomLeft', x: -halfWidth, y: halfHeight },
+            { name: 'bottomRight', x: halfWidth, y: halfHeight },
+        ];
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+
+        const rotatedCorners = corners.map((corner) => ({
+            name: corner.name,
+            x: (corner.x * cos) - (corner.y * sin),
+            y: (corner.x * sin) + (corner.y * cos),
+        }));
+
+        const minX = Math.min(...rotatedCorners.map((corner) => corner.x));
+        const maxX = Math.max(...rotatedCorners.map((corner) => corner.x));
+        const topLeft = rotatedCorners.find((corner) => corner.name === 'topLeft');
+
+        return {
+            minX,
+            width: maxX - minX,
+            topLeftX: topLeft ? topLeft.x : minX,
+        };
+    };
+
+    const sortedShelfBooks = (shelfIndex, excludeBookId = null) => state.books
+        .filter((book) => book.shelfIndex === shelfIndex && book.id !== excludeBookId)
+        .sort((a, b) => a.positionIndex - b.positionIndex || a.id - b.id);
+
+    const hasRightNeighbor = (book) => sortedShelfBooks(book.shelfIndex, book.id)
+        .some((candidate) => candidate.positionIndex > book.positionIndex);
+
+    const syncOrientationControlState = (selectedBook) => {
+        const tiltRightOption = selectedBookOrientation.querySelector('option[value="tilt_right"]');
+        if (!tiltRightOption) {
+            return;
+        }
+
+        const canTiltRight = Boolean(selectedBook && hasRightNeighbor(selectedBook));
+        tiltRightOption.disabled = Boolean(selectedBook) && !canTiltRight;
+
+        if (!canTiltRight && selectedBookOrientation.value === 'tilt_right') {
+            selectedBookOrientation.value = DEFAULT_ROTATION_MODE;
+        }
+    };
+
     const bookTargetRect = (book) => {
         const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
         const shelf = clamp(book.shelfIndex, 0, shelves - 1);
@@ -197,19 +249,41 @@ if (initialStateElement) {
         const uprightW = Math.max(24, Math.min(slotWidth * 0.95, 40));
         const shelfTop = padding + (shelfSpacing * (shelf + 1));
         const angle = rotationAngle(mode);
+        const shelfBooks = [
+            ...sortedShelfBooks(shelf, book.id),
+            { ...book, shelfIndex: shelf, positionIndex: pos, rotationMode: mode },
+        ].sort((a, b) => a.positionIndex - b.positionIndex || a.id - b.id);
+
+        let renderedLeftEdge = padding + BOOK_LEFT_INSET;
+        let targetX = padding + (slotWidth * pos) + (slotWidth - uprightW) / 2;
+
+        for (const shelfBook of shelfBooks) {
+            const shelfBookMode = shelfBook.rotationMode || DEFAULT_ROTATION_MODE;
+            const shelfBookAngle = rotationAngle(shelfBookMode);
+            const profile = rotationProfile(uprightW, uprightH, shelfBookAngle);
+            const contactX = shelfBookMode === 'tilt_left' ? profile.topLeftX : profile.minX;
+            const x = renderedLeftEdge - ((uprightW / 2) + contactX);
+
+            if (shelfBook.id === book.id) {
+                targetX = x;
+                break;
+            }
+
+            renderedLeftEdge += profile.width + BOOK_TOUCH_GAP;
+        }
 
         if (mode === 'side') {
             const w = uprightW;
             const h = uprightH;
             const sideDisplayHeight = uprightW;
-            const centerX = padding + (slotWidth * pos) + (slotWidth / 2);
+            const centerX = targetX + (w / 2);
             const centerY = shelfTop - 7 - (sideDisplayHeight / 2);
             const x = centerX - (w / 2);
             const y = centerY - (h / 2);
             return { x, y, w, h, a: angle };
         }
 
-        const x = padding + (slotWidth * pos) + (slotWidth - uprightW) / 2;
+        const x = targetX;
         const y = padding + (shelfSpacing * shelf) + (shelfSpacing - uprightH - 10);
         return { x, y, w: uprightW, h: uprightH, a: angle };
     };
@@ -725,6 +799,7 @@ if (initialStateElement) {
             selectedBookMeta.textContent = '';
             selectedBookOrientation.value = DEFAULT_ROTATION_MODE;
             selectedBookOrientation.disabled = true;
+            syncOrientationControlState(null);
             applyBookOrientationButton.disabled = true;
             renderCoverOptions(selectedBookCoverPicker, [], null, () => {}, 'Select a book to swap covers.');
             return;
@@ -734,6 +809,7 @@ if (initialStateElement) {
         selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
         selectedBookOrientation.value = selected.rotationMode || DEFAULT_ROTATION_MODE;
         selectedBookOrientation.disabled = false;
+        syncOrientationControlState(selected);
         applyBookOrientationButton.disabled = false;
 
         renderCoverOptions(
@@ -893,11 +969,26 @@ if (initialStateElement) {
         };
     };
 
-    const placementFromPoint = (x, y) => {
-        const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
-        const maxBookSlot = Math.max(0, slotCount - DECORATION_SLOT_BUFFER - 1);
+    const placementFromPoint = (x, y, movingBookId = null) => {
+        const { shelves, padding, shelfSpacing } = slotLayout();
         const shelfIndex = clamp(Math.floor((y - padding) / shelfSpacing), 0, shelves - 1);
-        const positionIndex = clamp(Math.floor((x - padding) / slotWidth), 0, maxBookSlot);
+        const shelfBooks = sortedShelfBooks(shelfIndex, movingBookId);
+        let positionIndex = shelfBooks.length;
+
+        for (let index = 0; index < shelfBooks.length; index += 1) {
+            const shelfBook = shelfBooks[index];
+            const anim = animatedBooks.get(shelfBook.id);
+            const fallbackRect = anim ? null : bookTargetRect(shelfBook);
+            const centerX = anim
+                ? anim.x + (anim.w / 2)
+                : fallbackRect.x + (fallbackRect.w / 2);
+
+            if (x < centerX) {
+                positionIndex = index;
+                break;
+            }
+        }
+
         return { shelf_index: shelfIndex, position_index: positionIndex };
     };
 
@@ -1034,7 +1125,7 @@ if (initialStateElement) {
         if (!selected) return;
         lastBookTap = null;
 
-        const placement = placementFromPoint(x, y);
+        const placement = placementFromPoint(x, y, bookId);
         const anim = animatedBooks.get(bookId);
         if (anim) {
             const dropTarget = bookTargetRect({
@@ -1175,6 +1266,15 @@ if (initialStateElement) {
         });
 
         applyState(updated);
+    });
+
+    selectedBookOrientation.addEventListener('change', () => {
+        const selected = state.books.find((book) => book.id === selectedBookId);
+        if (!selected) {
+            return;
+        }
+
+        syncOrientationControlState(selected);
     });
 
     addNoteForm.addEventListener('submit', async (event) => {
