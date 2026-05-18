@@ -39,6 +39,10 @@ if (initialStateElement) {
 
     const animatedBooks = new Map();
     const coverImages = new Map();
+    const buttonState = {
+        controlsOpen: null,
+        notesOpen: null,
+    };
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const isMobileViewport = () => window.matchMedia('(max-width: 640px)').matches;
@@ -291,9 +295,19 @@ if (initialStateElement) {
             overlayBackdrop.hidden = true;
         }
 
-        toggleControlsButton.setAttribute('aria-expanded', controlsOpen ? 'true' : 'false');
-        toggleNotesButton.setAttribute('aria-expanded', notesOpen ? 'true' : 'false');
-        toggleNotesButton.textContent = notesOpen ? 'Close notes' : 'Notes';
+        if (buttonState.controlsOpen !== controlsOpen) {
+            toggleControlsButton.setAttribute('aria-expanded', controlsOpen ? 'true' : 'false');
+            toggleControlsButton.setAttribute('aria-label', controlsOpen ? 'Close controls panel' : 'Open controls panel');
+            toggleControlsButton.textContent = controlsOpen ? 'Close controls' : 'Open controls';
+            buttonState.controlsOpen = controlsOpen;
+        }
+
+        if (buttonState.notesOpen !== notesOpen) {
+            toggleNotesButton.setAttribute('aria-expanded', notesOpen ? 'true' : 'false');
+            toggleNotesButton.setAttribute('aria-label', notesOpen ? 'Close notes panel' : 'Open notes panel');
+            toggleNotesButton.textContent = notesOpen ? 'Close notes' : 'Open notes';
+            buttonState.notesOpen = notesOpen;
+        }
     };
 
     const renderCoverOptions = (container, covers, selectedCoverId, onSelect, emptyMessage) => {

@@ -131,6 +131,11 @@ button:hover {
     right: 1rem;
     z-index: 60;
     box-shadow: 0 8px 18px rgba(17, 24, 39, 0.24);
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .floating-btn--notes {
@@ -139,6 +144,12 @@ button:hover {
 
 .floating-btn--controls {
     bottom: 4.25rem;
+}
+
+.floating-btn:focus-visible,
+.panel-close:focus-visible {
+    outline: 3px solid #1d4ed8;
+    outline-offset: 2px;
 }
 
 .danger-btn {

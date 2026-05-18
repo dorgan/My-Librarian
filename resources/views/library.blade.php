@@ -15,7 +15,7 @@
             <canvas id="bookcase-canvas" aria-label="Interactive bookcase" role="img"></canvas>
         </section>
 
-        <aside id="controls-panel" class="controls-panel" aria-label="Book and preference controls" aria-hidden="false">
+        <aside id="controls-panel" class="controls-panel" aria-label="Book and preference controls" aria-hidden="true">
             <div class="panel-header">
                 <h2>Library controls</h2>
                 <button type="button" id="close-controls" class="panel-close" aria-label="Close controls">Close</button>
@@ -121,10 +121,10 @@
     </main>
 
     <div id="overlay-backdrop" class="overlay-backdrop" hidden></div>
-    <button id="toggle-controls" type="button" class="floating-btn floating-btn--controls" aria-controls="controls-panel" aria-expanded="false">
+    <button id="toggle-controls" type="button" class="floating-btn floating-btn--controls" aria-controls="controls-panel" aria-expanded="false" aria-label="Open controls panel">
         Controls
     </button>
-    <button id="toggle-notes" type="button" class="floating-btn floating-btn--notes" aria-controls="notes-panel" aria-expanded="false">
+    <button id="toggle-notes" type="button" class="floating-btn floating-btn--notes" aria-controls="notes-panel" aria-expanded="false" aria-label="Open notes panel">
         Notes
     </button>
 </div>
