@@ -46,6 +46,43 @@ if (initialStateElement) {
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const isMobileViewport = () => window.matchMedia('(max-width: 640px)').matches;
+    const hexToRgb = (hex) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result
+            ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) }
+            : { r: 100, g: 60, b: 20 };
+    };
+    const spineTextColor = (hex) => {
+        const { r, g, b } = hexToRgb(hex);
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#1f2937' : '#fef9ee';
+    };
+
+    // Slot layout constants
+    const MIN_SLOT_COUNT = 12;         // minimum slots per shelf to keep spines readable
+    const DECORATION_SLOT_BUFFER = 4;  // extra slots reserved at the right end for decoration objects
+    // Font size is capped by spine WIDTH: after -90° rotation, the character height maps to the spine's
+    // narrow dimension, so we limit by anim.w rather than anim.h.
+    const MIN_SPINE_FONT_SIZE = 7;     // px — legible at minimum spine width
+    const MAX_SPINE_FONT_SIZE = 10;    // px — cap so rotated characters fit within the narrow spine
+    const SPINE_FONT_PADDING = 3;      // px — safety gap between font size and spine width
+    const MAX_DECORATION_ICON_SIZE = 13; // px — maximum icon font size inside decoration objects
+
+    /** Scroll to an element after a short delay to let the panel animate open */
+    const scrollToElementAfterDelay = (elementId, delay = 120) => {
+        setTimeout(() => document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), delay);
+    };
+
+    /** Return the book (or null) whose spine rect contains (x, y) in canvas coordinates */
+    const findBookAtPoint = (x, y) => {
+        for (const book of [...state.books].reverse()) {
+            const anim = animatedBooks.get(book.id);
+            if (anim && x >= anim.x && x <= anim.x + anim.w && y >= anim.y && y <= anim.y + anim.h) {
+                return book;
+            }
+        }
+        return null;
+    };
+
     const safeCoverUrl = (value) => {
         if (typeof value !== 'string' || !value) {
             return null;
@@ -90,10 +127,11 @@ if (initialStateElement) {
 
     const slotLayout = () => {
         const shelves = clamp(Number(state.preferences.shelfCount) || 4, 2, 8);
-        const padding = 22;
+        const padding = 28;
         const shelfSpacing = (canvas.height - (padding * 2)) / shelves;
         const maxPosition = state.books.reduce((largest, book) => Math.max(largest, Number(book.positionIndex) || 0), 0);
-        const slotCount = Math.max(5, maxPosition + 1);
+        // MIN_SLOT_COUNT keeps spines readable; DECORATION_SLOT_BUFFER reserves end slots for objects
+        const slotCount = Math.max(MIN_SLOT_COUNT, maxPosition + DECORATION_SLOT_BUFFER);
         const slotWidth = (canvas.width - (padding * 2)) / slotCount;
         return { shelves, slotCount, padding, shelfSpacing, slotWidth };
     };
@@ -102,10 +140,11 @@ if (initialStateElement) {
         const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
         const shelf = clamp(book.shelfIndex, 0, shelves - 1);
         const pos = clamp(book.positionIndex, 0, slotCount - 1);
-        const h = Math.max(78, shelfSpacing * 0.72);
-        const w = Math.max(44, Math.min(slotWidth * 0.84, h * 0.72));
+        // Spine proportions: narrow width, tall height
+        const h = Math.max(72, shelfSpacing * 0.82);
+        const w = Math.max(16, Math.min(slotWidth * 0.80, 28));
         const x = padding + (slotWidth * pos) + (slotWidth - w) / 2;
-        const y = padding + (shelfSpacing * shelf) + (shelfSpacing - h - 8);
+        const y = padding + (shelfSpacing * shelf) + (shelfSpacing - h - 10);
         return { x, y, w, h };
     };
 
@@ -174,23 +213,164 @@ if (initialStateElement) {
         return record;
     };
 
-    const fallbackCover = (book, anim) => {
-        const gradient = ctx.createLinearGradient(anim.x, anim.y, anim.x, anim.y + anim.h);
-        gradient.addColorStop(0, book.spineColor || '#9a6d3d');
-        gradient.addColorStop(1, '#1f2937');
+    // ── Spine drawing (replaces front-cover rendering) ──────────────────────
+    const drawBookSpine = (book, anim) => {
+        const base = book.spineColor || '#6f4e37';
+
+        // Side-lighting gradient for a 3-D spine effect
+        const gradient = ctx.createLinearGradient(anim.x, anim.y, anim.x + anim.w, anim.y);
+        gradient.addColorStop(0,    'rgba(0,0,0,0.35)');
+        gradient.addColorStop(0.18, base);
+        gradient.addColorStop(0.82, base);
+        gradient.addColorStop(1,    'rgba(0,0,0,0.22)');
+
+        roundRect(anim.x, anim.y, anim.w, anim.h, 3);
         ctx.fillStyle = gradient;
-        roundRect(anim.x, anim.y, anim.w, anim.h, 8);
         ctx.fill();
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.fillRect(anim.x + anim.w - 6, anim.y + 6, 3, anim.h - 12);
-        ctx.fillStyle = '#fefce8';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.fillText((book.title || '').slice(0, 18), anim.x + 8, anim.y + 22, anim.w - 16);
-        ctx.font = '10px sans-serif';
-        if (book.author) {
-            ctx.fillText(book.author.slice(0, 18), anim.x + 8, anim.y + 40, anim.w - 16);
+        // Thin top-edge highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(anim.x + 2, anim.y + 1, anim.w - 4, 2);
+
+        // Rotated title text (bottom-to-top, standard spine convention)
+        ctx.save();
+        ctx.translate(anim.x + anim.w / 2, anim.y + anim.h - 7);
+        ctx.rotate(-Math.PI / 2);
+        const fontSize = Math.max(MIN_SPINE_FONT_SIZE, Math.min(MAX_SPINE_FONT_SIZE, anim.w - SPINE_FONT_PADDING));
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.fillStyle = spineTextColor(base);
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillText((book.title || '').slice(0, 26), 0, 0, anim.h - 18);
+        ctx.restore();
+    };
+
+    // ── Bookshelf decoration rects (preferences mug, notes notepad, add-book ghost) ──
+    const getDecorationRects = () => {
+        const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
+        const h = Math.max(72, shelfSpacing * 0.82);
+        const w = Math.max(20, Math.min(slotWidth * 0.80, 32));
+        const slotX = (pos) => padding + slotWidth * pos + (slotWidth - w) / 2;
+        const slotY = (shelf) => padding + shelfSpacing * shelf + (shelfSpacing - h - 10);
+
+        return {
+            // Preferences mug — last slot, top shelf
+            preferences: { x: slotX(slotCount - 1), y: slotY(0),            w, h },
+            // Notes notepad — last slot, bottom shelf
+            notes:       { x: slotX(slotCount - 1), y: slotY(shelves - 1), w, h },
+            // Add-book ghost — second-to-last slot, top shelf
+            addBook:     { x: slotX(slotCount - 2), y: slotY(0),            w, h },
+        };
+    };
+
+    const hitTest = (x, y, rect) =>
+        x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+
+    const drawMug = (rect) => {
+        const { x, y, w, h } = rect;
+        const bx = x + 2, by = y + h * 0.28, bw = w - 7, bh = h * 0.58;
+
+        // Mug body
+        ctx.fillStyle = '#e8d5b5';
+        roundRect(bx, by, bw, bh, 4);
+        ctx.fill();
+        ctx.strokeStyle = '#c4a97d';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Handle arc
+        ctx.strokeStyle = '#e8d5b5';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(bx + bw + 5, by + bh * 0.48, bh * 0.28, -Math.PI * 0.5, Math.PI * 0.5);
+        ctx.stroke();
+
+        // Steam wisps
+        ctx.strokeStyle = 'rgba(210,210,210,0.7)';
+        ctx.lineWidth = 1.2;
+        for (let i = 0; i < 2; i++) {
+            const sx = bx + bw * (0.28 + i * 0.38);
+            ctx.beginPath();
+            ctx.moveTo(sx, by - 3);
+            ctx.quadraticCurveTo(sx + 4, by - 11, sx, by - 19);
+            ctx.stroke();
         }
+
+        // Gear icon — signals "preferences"
+        ctx.fillStyle = '#7a5c3a';
+        ctx.font = `${Math.min(bw - 2, MAX_DECORATION_ICON_SIZE)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚙', bx + bw / 2, by + bh / 2);
+    };
+
+    const drawNotepad = (rect) => {
+        const { x, y, w, h } = rect;
+        const px = x + 2, py = y + h * 0.08, pw = w - 4, ph = h * 0.78;
+
+        // Notepad body
+        ctx.fillStyle = '#fffde6';
+        roundRect(px, py, pw, ph, 3);
+        ctx.fill();
+        ctx.strokeStyle = '#d4c56a';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Ruled lines
+        ctx.strokeStyle = '#b0a878';
+        ctx.lineWidth = 0.7;
+        for (let i = 0; i < 4; i++) {
+            const ly = py + ph * (0.22 + i * 0.16);
+            ctx.beginPath();
+            ctx.moveTo(px + 3, ly);
+            ctx.lineTo(px + pw - 3, ly);
+            ctx.stroke();
+        }
+
+        // Pencil icon — signals "notes"
+        ctx.fillStyle = '#6b5a2b';
+        ctx.font = `${Math.min(pw - 2, MAX_DECORATION_ICON_SIZE)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✏', px + pw / 2, py + ph / 2);
+
+        // Spiral binding dots at top
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            ctx.arc(px + pw * (0.22 + i * 0.28), py + 5, 2.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+    };
+
+    const drawGhostBook = (rect) => {
+        const { x, y, w, h } = rect;
+
+        // Dashed spine outline
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        roundRect(x, y, w, h, 3);
+        ctx.strokeStyle = '#9ca3af';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Plus symbol
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = `bold ${Math.min(w + 6, MAX_DECORATION_ICON_SIZE + 9)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('+', x + w / 2, y + h / 2);
+    };
+
+    const drawDecorations = () => {
+        const decors = getDecorationRects();
+        drawMug(decors.preferences);
+        drawNotepad(decors.notes);
+        drawGhostBook(decors.addBook);
     };
 
     const drawBookcase = () => {
@@ -236,33 +416,35 @@ if (initialStateElement) {
                 anim.h += (anim.th - anim.h) * 0.2;
             }
 
+            // Drop shadow
             ctx.save();
-            ctx.shadowColor = 'rgba(17, 24, 39, 0.28)';
-            ctx.shadowBlur = 14;
-            ctx.shadowOffsetY = 5;
-            roundRect(anim.x, anim.y, anim.w, anim.h, 8);
-            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.38)';
+            ctx.shadowBlur = 6;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 3;
+            roundRect(anim.x, anim.y, anim.w, anim.h, 3);
+            ctx.fillStyle = book.spineColor || '#6f4e37';
             ctx.fill();
             ctx.restore();
 
-            ctx.save();
-            roundRect(anim.x, anim.y, anim.w, anim.h, 8);
-            ctx.clip();
-            const cover = imageRecord(book.coverUrl);
-            if (cover && cover.loaded && !cover.failed) {
-                ctx.drawImage(cover.image, anim.x, anim.y, anim.w, anim.h);
-            } else {
-                fallbackCover(book, anim);
-            }
-            ctx.restore();
+            // Spine body + text
+            drawBookSpine(book, anim);
 
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-            ctx.fillRect(anim.x + anim.w - 6, anim.y + 4, 3, anim.h - 8);
-            ctx.strokeStyle = selectedBookId === book.id ? '#111827' : 'rgba(17, 24, 39, 0.18)';
-            ctx.lineWidth = selectedBookId === book.id ? 3 : 1;
-            roundRect(anim.x, anim.y, anim.w, anim.h, 8);
-            ctx.stroke();
+            // Selection glow
+            if (selectedBookId === book.id) {
+                ctx.save();
+                ctx.shadowColor = '#fbbf24';
+                ctx.shadowBlur = 10;
+                roundRect(anim.x, anim.y, anim.w, anim.h, 3);
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+            }
         }
+
+        // Draw shelf decoration objects (preferences, notes, add-book)
+        drawDecorations();
 
         requestAnimationFrame(drawBookcase);
     };
@@ -270,42 +452,28 @@ if (initialStateElement) {
     const setCanvasSize = () => {
         const bounds = canvas.parentElement.getBoundingClientRect();
         canvas.width = Math.max(320, Math.floor(bounds.width));
-        canvas.height = isMobileViewport()
-            ? Math.max(340, Math.floor(window.innerHeight))
-            : Math.max(340, Math.floor(window.innerHeight * 0.68));
+        canvas.height = Math.max(340, Math.floor(window.innerHeight));
         ensureAnimatedBooks();
     };
 
     const syncPanels = () => {
-        const mobile = isMobileViewport();
-        toggleControlsButton.hidden = !mobile;
+        // Both panels are always full-height overlays — no side-by-side mode
+        toggleControlsButton.hidden = true;
+        toggleNotesButton.hidden = true;
 
-        if (mobile) {
-            controlsPanel.classList.toggle('open', controlsOpen);
-            notesPanel.classList.toggle('open', notesOpen);
-            controlsPanel.setAttribute('aria-hidden', controlsOpen ? 'false' : 'true');
-            notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
-            overlayBackdrop.hidden = !(controlsOpen || notesOpen);
-        } else {
-            controlsOpen = false;
-            controlsPanel.classList.remove('open');
-            controlsPanel.setAttribute('aria-hidden', 'false');
-            notesPanel.classList.toggle('open', notesOpen);
-            notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
-            overlayBackdrop.hidden = true;
-        }
+        controlsPanel.classList.toggle('open', controlsOpen);
+        notesPanel.classList.toggle('open', notesOpen);
+        controlsPanel.setAttribute('aria-hidden', controlsOpen ? 'false' : 'true');
+        notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
+        overlayBackdrop.hidden = !(controlsOpen || notesOpen);
 
         if (buttonState.controlsOpen !== controlsOpen) {
             toggleControlsButton.setAttribute('aria-expanded', controlsOpen ? 'true' : 'false');
-            toggleControlsButton.setAttribute('aria-label', controlsOpen ? 'Close controls panel' : 'Open controls panel');
-            toggleControlsButton.textContent = controlsOpen ? 'Close controls' : 'Open controls';
             buttonState.controlsOpen = controlsOpen;
         }
 
         if (buttonState.notesOpen !== notesOpen) {
             toggleNotesButton.setAttribute('aria-expanded', notesOpen ? 'true' : 'false');
-            toggleNotesButton.setAttribute('aria-label', notesOpen ? 'Close notes panel' : 'Open notes panel');
-            toggleNotesButton.textContent = notesOpen ? 'Close notes' : 'Open notes';
             buttonState.notesOpen = notesOpen;
         }
     };
@@ -609,23 +777,63 @@ if (initialStateElement) {
 
     canvas.addEventListener('click', (event) => {
         const rect = canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (event.clientX - rect.left) * scaleX;
+        const y = (event.clientY - rect.top) * scaleY;
 
-        for (const book of [...state.books].reverse()) {
-            const anim = animatedBooks.get(book.id);
-            if (!anim) continue;
+        // Check decoration hit areas first
+        const decors = getDecorationRects();
 
-            const inside = x >= anim.x && x <= anim.x + anim.w && y >= anim.y && y <= anim.y + anim.h;
-            if (inside) {
-                selectedBookId = book.id;
-                renderSelectedBook();
-                return;
-            }
+        if (hitTest(x, y, decors.preferences)) {
+            controlsOpen = true;
+            syncPanels();
+            scrollToElementAfterDelay('preferences-form');
+            return;
         }
 
+        if (hitTest(x, y, decors.notes)) {
+            notesOpen = true;
+            syncPanels();
+            return;
+        }
+
+        if (hitTest(x, y, decors.addBook)) {
+            controlsOpen = true;
+            syncPanels();
+            scrollToElementAfterDelay('book-search-form');
+            return;
+        }
+
+        // Check book spines
+        const book = findBookAtPoint(x, y);
+        if (book) {
+            selectedBookId = book.id;
+            renderSelectedBook();
+            controlsOpen = true;
+            syncPanels();
+            scrollToElementAfterDelay('selected-book-label');
+            return;
+        }
+
+        // Click on empty shelf — close panels
         selectedBookId = null;
         renderSelectedBook();
+        controlsOpen = false;
+        notesOpen = false;
+        syncPanels();
+    });
+
+    canvas.addEventListener('mousemove', (event) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (event.clientX - rect.left) * scaleX;
+        const y = (event.clientY - rect.top) * scaleY;
+
+        const decors = getDecorationRects();
+        const overDecor = hitTest(x, y, decors.preferences) || hitTest(x, y, decors.notes) || hitTest(x, y, decors.addBook);
+        canvas.style.cursor = (overDecor || findBookAtPoint(x, y) !== null) ? 'pointer' : 'default';
     });
 
     bookSearchForm.addEventListener('submit', async (event) => {
