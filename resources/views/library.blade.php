@@ -23,7 +23,7 @@
     <main class="main-layout">
         <section class="bookcase-panel" aria-label="Bookcase">
             <canvas id="bookcase-canvas" aria-label="Interactive bookcase" role="img"></canvas>
-            <p class="hint">Search Open Library, pick a cover, then tap/click a book on the shelf to swap covers or move it.</p>
+            <p class="hint">Search Open Library, select the book you want to add, then use stored metadata to swap covers or refresh details later.</p>
         </section>
 
         <aside class="controls-panel" aria-label="Book and preference controls">
@@ -33,7 +33,7 @@
                     <label class="search-field">Book title or author <input name="query" maxlength="180" placeholder="Search by title or author"></label>
                     <button type="submit">Search</button>
                 </form>
-                <p id="book-search-feedback" class="hint" aria-live="polite">Search Open Library to preload author, publisher, and cover choices.</p>
+                <p id="book-search-feedback" class="hint" aria-live="polite">Search Open Library to select the book you want to add.</p>
                 <div id="book-search-results" class="search-results" aria-live="polite"></div>
             </section>
 
@@ -45,7 +45,7 @@
                     <label>Publisher <input name="publisher" maxlength="180"></label>
                     <label>Accent color <input name="spine_color" type="color" value="#6f4e37"></label>
                     <div>
-                        <p class="cover-picker-label">Chosen cover</p>
+                        <p class="cover-picker-label">Saved cover choices</p>
                         <div id="add-book-cover-picker" class="cover-picker" aria-live="polite"></div>
                     </div>
                     <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
@@ -97,6 +97,16 @@
                     <label>Shelves <input name="shelf_count" type="number" min="2" max="8" value="4"></label>
                     <button type="submit">Save preferences</button>
                 </form>
+            </section>
+
+            <section>
+                <h2>Metadata refresh</h2>
+                <p id="metadata-refresh-feedback" class="hint" aria-live="polite">Select one or more saved books to refresh their cached Open Library metadata.</p>
+                <div id="metadata-refresh-list" class="metadata-refresh-list" aria-live="polite"></div>
+                <div class="metadata-refresh-actions">
+                    <button id="refresh-selected-books" type="button">Refresh selected</button>
+                    <button id="refresh-all-books" type="button" class="secondary-btn">Refresh all Open Library books</button>
+                </div>
             </section>
         </aside>
 

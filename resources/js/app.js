@@ -7,6 +7,7 @@ if (initialStateElement) {
     let notesOpen = false;
     let searchResults = [];
     let addBookSelection = null;
+    const refreshSelection = new Set();
 
     const canvas = document.getElementById('bookcase-canvas');
     const ctx = canvas.getContext('2d');
@@ -21,6 +22,10 @@ if (initialStateElement) {
     const bookSearchResults = document.getElementById('book-search-results');
     const addBookForm = document.getElementById('add-book-form');
     const addBookCoverPicker = document.getElementById('add-book-cover-picker');
+    const metadataRefreshFeedback = document.getElementById('metadata-refresh-feedback');
+    const metadataRefreshList = document.getElementById('metadata-refresh-list');
+    const refreshSelectedBooksButton = document.getElementById('refresh-selected-books');
+    const refreshAllBooksButton = document.getElementById('refresh-all-books');
     const moveBookForm = document.getElementById('move-book-form');
     const removeBookButton = document.getElementById('remove-book');
     const addNoteForm = document.getElementById('add-note-form');
@@ -261,7 +266,9 @@ if (initialStateElement) {
     const renderCoverOptions = (container, covers, selectedCoverId, onSelect, emptyMessage) => {
         container.innerHTML = '';
 
-        if (!covers || covers.length === 0) {
+        const validCovers = (covers || []).filter((cover) => safeCoverUrl(cover.thumbnailUrl || cover.url));
+
+        if (!validCovers.length) {
             const empty = document.createElement('p');
             empty.className = 'cover-option-empty';
             empty.textContent = emptyMessage;
@@ -269,7 +276,12 @@ if (initialStateElement) {
             return;
         }
 
-        for (const cover of covers) {
+        for (const cover of validCovers) {
+            const previewUrl = safeCoverUrl(cover.thumbnailUrl || cover.url);
+            if (!previewUrl) {
+                continue;
+            }
+
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `cover-option${selectedCoverId === cover.id ? ' selected' : ''}`;
@@ -279,13 +291,8 @@ if (initialStateElement) {
             const image = document.createElement('img');
             image.className = 'cover-option-preview';
             image.alt = '';
-            const previewUrl = safeCoverUrl(cover.thumbnailUrl || cover.url);
-            if (!previewUrl) {
-                continue;
-            }
             image.src = previewUrl;
             button.appendChild(image);
-
             container.appendChild(button);
         }
     };
@@ -297,13 +304,13 @@ if (initialStateElement) {
 
         renderCoverOptions(
             addBookCoverPicker,
-            addBookSelection?.covers ?? [],
+            addBookSelection?.covers ?? (addBookSelection?.cover ? [addBookSelection.cover] : []),
             addBookSelection?.selectedCoverId ?? null,
             (cover) => {
                 addBookSelection = { ...addBookSelection, selectedCoverId: cover.id };
                 syncAddBookForm();
             },
-            'No alternate covers available yet.',
+            'Cover choices will be saved after you select a search result.',
         );
     };
 
@@ -318,20 +325,13 @@ if (initialStateElement) {
             const card = document.createElement('article');
             card.className = `search-result${addBookSelection?.resultKey === result.resultKey ? ' active' : ''}`;
 
-            const preview = result.covers?.[0];
-            if (preview) {
-                const previewUrl = safeCoverUrl(preview.thumbnailUrl || preview.url);
-                if (!previewUrl) {
-                    const fallback = document.createElement('div');
-                    fallback.className = 'cover-option-fallback';
-                    card.appendChild(fallback);
-                } else {
+            const previewUrl = safeCoverUrl(result.cover?.thumbnailUrl || result.cover?.url);
+            if (previewUrl) {
                 const image = document.createElement('img');
                 image.className = 'search-result-cover';
                 image.alt = '';
                 image.src = previewUrl;
                 card.appendChild(image);
-                }
             } else {
                 const fallback = document.createElement('div');
                 fallback.className = 'cover-option-fallback';
@@ -360,13 +360,31 @@ if (initialStateElement) {
             const button = document.createElement('button');
             button.type = 'button';
             button.textContent = addBookSelection?.resultKey === result.resultKey ? 'Selected' : 'Use this book';
-            button.addEventListener('click', () => {
+            button.addEventListener('click', async () => {
                 addBookSelection = {
                     ...result,
-                    selectedCoverId: result.covers?.[0]?.id ?? null,
+                    covers: result.cover ? [result.cover] : [],
+                    selectedCoverId: result.cover?.id ?? null,
+                    payload: null,
                 };
                 syncAddBookForm();
                 renderSearchResults();
+                bookSearchFeedback.textContent = 'Loading full Open Library metadata and cover choices…';
+
+                try {
+                    const selection = await fetchJson(`/api/open-library/selection?work_key=${encodeURIComponent(result.workKey ?? '')}&edition_key=${encodeURIComponent(result.editionKey ?? '')}`);
+                    addBookSelection = {
+                        ...addBookSelection,
+                        ...selection,
+                        resultKey: result.resultKey,
+                        selectedCoverId: selection.covers?.[0]?.id ?? addBookSelection.selectedCoverId ?? null,
+                    };
+                    syncAddBookForm();
+                    renderSearchResults();
+                    bookSearchFeedback.textContent = 'Selected book metadata will be stored locally when you add it.';
+                } catch {
+                    bookSearchFeedback.textContent = 'Full metadata could not be loaded right now. You can still add the selected book.';
+                }
             });
             copy.appendChild(button);
 
@@ -386,7 +404,7 @@ if (initialStateElement) {
         }
 
         selectedBookLabel.textContent = `${selected.title}${selected.author ? ` by ${selected.author}` : ''}`;
-        selectedBookMeta.textContent = selected.publisher ? `Publisher: ${selected.publisher}` : 'Publisher unavailable';
+        selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
         moveBookForm.shelf_index.value = selected.shelfIndex;
         moveBookForm.position_index.value = selected.positionIndex;
 
@@ -398,14 +416,69 @@ if (initialStateElement) {
                 const updated = await fetchJson(`/api/books/${selected.id}/cover`, 'PATCH', { cover_id: cover.id });
                 applyState(updated);
             },
-            'This book only has one display option.',
+            'This book does not have any saved cover options yet.',
         );
+    };
+
+    const renderMetadataRefreshList = () => {
+        metadataRefreshList.innerHTML = '';
+        const refreshableBooks = state.books.filter((book) => book.canRefreshMetadata);
+
+        refreshSelectedBooksButton.disabled = refreshSelection.size === 0;
+        refreshAllBooksButton.disabled = refreshableBooks.length === 0;
+
+        if (!refreshableBooks.length) {
+            const empty = document.createElement('p');
+            empty.className = 'cover-option-empty';
+            empty.textContent = 'Add an Open Library book to enable metadata refresh.';
+            metadataRefreshList.appendChild(empty);
+            return;
+        }
+
+        for (const book of refreshableBooks) {
+            const item = document.createElement('div');
+            item.className = 'metadata-refresh-item';
+
+            const label = document.createElement('label');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = refreshSelection.has(book.id);
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    refreshSelection.add(book.id);
+                } else {
+                    refreshSelection.delete(book.id);
+                }
+                refreshSelectedBooksButton.disabled = refreshSelection.size === 0;
+            });
+
+            const title = document.createElement('span');
+            title.textContent = `${book.title}${book.author ? ` by ${book.author}` : ''}`;
+            label.appendChild(checkbox);
+            label.appendChild(title);
+            item.appendChild(label);
+
+            const meta = document.createElement('small');
+            meta.textContent = book.hasOpenLibraryMetadata
+                ? 'Cached metadata ready to refresh.'
+                : 'This book can fetch metadata on demand.';
+            item.appendChild(meta);
+
+            metadataRefreshList.appendChild(item);
+        }
     };
 
     const applyState = (newState) => {
         state.books = newState.books;
         state.notes = newState.notes;
         state.preferences = newState.preferences;
+
+        const currentBookIds = new Set(state.books.map((book) => book.id));
+        for (const bookId of [...refreshSelection]) {
+            if (!currentBookIds.has(bookId)) {
+                refreshSelection.delete(bookId);
+            }
+        }
 
         if (selectedBookId && !state.books.some((book) => book.id === selectedBookId)) {
             selectedBookId = null;
@@ -417,6 +490,7 @@ if (initialStateElement) {
         preferencesForm.shelf_count.value = state.preferences.shelfCount;
 
         renderSelectedBook();
+        renderMetadataRefreshList();
         renderNotes();
         ensureAnimatedBooks();
     };
@@ -517,7 +591,7 @@ if (initialStateElement) {
             }));
             renderSearchResults();
             bookSearchFeedback.textContent = searchResults.length
-                ? 'Choose a result to load its metadata and cover choices.'
+                ? 'Choose a search result to cache metadata and cover choices before saving.'
                 : 'No Open Library results found for that search.';
         } catch {
             searchResults = [];
@@ -543,7 +617,7 @@ if (initialStateElement) {
             payload.open_library_work_key = addBookSelection.workKey;
             payload.open_library_edition_key = addBookSelection.editionKey;
             payload.open_library_cover_id = addBookSelection.selectedCoverId;
-            payload.open_library_cover_ids = (addBookSelection.covers || []).map((cover) => cover.id);
+            payload.open_library_payload = addBookSelection.payload;
         }
 
         const updated = await fetchJson('/api/books', 'POST', payload);
@@ -551,7 +625,37 @@ if (initialStateElement) {
         addBookForm.reset();
         addBookForm.spine_color.value = '#6f4e37';
         addBookSelection = null;
+        searchResults = [];
+        bookSearchResults.innerHTML = '';
+        bookSearchFeedback.textContent = 'Search Open Library to select the next book you want to add.';
         syncAddBookForm();
+    });
+
+    refreshSelectedBooksButton.addEventListener('click', async () => {
+        if (!refreshSelection.size) {
+            return;
+        }
+
+        metadataRefreshFeedback.textContent = 'Refreshing selected metadata…';
+        const updated = await fetchJson('/api/books/refresh-metadata', 'POST', {
+            book_ids: [...refreshSelection],
+        });
+        applyState(updated);
+        metadataRefreshFeedback.textContent = 'Selected books were refreshed from Open Library.';
+    });
+
+    refreshAllBooksButton.addEventListener('click', async () => {
+        const bookIds = state.books.filter((book) => book.canRefreshMetadata).map((book) => book.id);
+        if (!bookIds.length) {
+            return;
+        }
+
+        metadataRefreshFeedback.textContent = 'Refreshing all cached Open Library metadata…';
+        const updated = await fetchJson('/api/books/refresh-metadata', 'POST', {
+            book_ids: bookIds,
+        });
+        applyState(updated);
+        metadataRefreshFeedback.textContent = 'All Open Library books were refreshed.';
     });
 
     moveBookForm.addEventListener('submit', async (event) => {

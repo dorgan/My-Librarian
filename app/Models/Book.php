@@ -21,10 +21,12 @@ class Book extends Model
         'open_library_edition_key',
         'open_library_cover_id',
         'open_library_cover_ids',
+        'open_library_payload',
     ];
 
     protected $casts = [
         'open_library_cover_ids' => 'array',
+        'open_library_payload' => 'array',
     ];
 
     public function user(): BelongsTo

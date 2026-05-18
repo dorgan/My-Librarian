@@ -60,7 +60,8 @@ class LibraryStateService
 
     private function serializeBook(Book $book): array
     {
-        $coverIds = collect($book->open_library_cover_ids ?? [])
+        $payload = is_array($book->open_library_payload) ? $book->open_library_payload : [];
+        $coverIds = collect($book->open_library_cover_ids ?: $this->openLibrary->coverIdsFromPayload($payload))
             ->map(fn (mixed $coverId): int => (int) $coverId)
             ->filter(fn (int $coverId): bool => $coverId > 0)
             ->values();
@@ -79,16 +80,13 @@ class LibraryStateService
             'title' => $book->title,
             'author' => $book->author,
             'publisher' => $book->publisher,
+            'publishYear' => $this->openLibrary->metadataPublishYear($payload),
             'spineColor' => $book->spine_color,
             'coverId' => $selectedCoverId,
             'coverUrl' => $selectedCoverId ? $this->openLibrary->coverUrl($selectedCoverId, 'M') : null,
-            'coverOptions' => $coverIds
-                ->map(fn (int $coverId): array => [
-                    'id' => $coverId,
-                    'url' => $this->openLibrary->coverUrl($coverId, 'M'),
-                    'thumbnailUrl' => $this->openLibrary->coverUrl($coverId, 'S'),
-                ])
-                ->all(),
+            'coverOptions' => $this->openLibrary->coverOptions($coverIds->all()),
+            'canRefreshMetadata' => filled($book->open_library_work_key) || filled($book->open_library_edition_key),
+            'hasOpenLibraryMetadata' => $payload !== [],
             'shelfIndex' => $book->placement->shelf_index,
             'positionIndex' => $book->placement->position_index,
         ];

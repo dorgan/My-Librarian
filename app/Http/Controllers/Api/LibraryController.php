@@ -34,13 +34,27 @@ class LibraryController extends Controller
 
     public function searchOpenLibrary(Request $request): JsonResponse
     {
+        $user = $this->currentUser();
         $data = $request->validate([
             'query' => ['required', 'string', 'max:180'],
         ]);
 
         return response()->json([
-            'results' => $this->openLibrary->search($data['query']),
+            'results' => $this->openLibrary->search($user->email, $data['query']),
         ]);
+    }
+
+    public function openLibrarySelection(Request $request): JsonResponse
+    {
+        $user = $this->currentUser();
+        $data = $request->validate([
+            'work_key' => ['nullable', 'string', 'max:60'],
+            'edition_key' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        return response()->json(
+            $this->openLibrary->selection($user->email, $data['work_key'] ?? null, $data['edition_key'] ?? null)
+        );
     }
 
     public function storeBook(Request $request): JsonResponse
@@ -57,24 +71,29 @@ class LibraryController extends Controller
             'open_library_work_key' => ['nullable', 'string', 'max:60'],
             'open_library_edition_key' => ['nullable', 'string', 'max:60'],
             'open_library_cover_id' => ['nullable', 'integer', 'min:1'],
-            'open_library_cover_ids' => ['nullable', 'array', 'max:8'],
-            'open_library_cover_ids.*' => ['integer', 'min:1'],
+            'open_library_payload' => ['nullable', 'array'],
         ]);
 
-        $coverIds = $this->normalizedCoverIds($data['open_library_cover_ids'] ?? []);
-        $selectedCoverId = $this->selectedCoverId($data['open_library_cover_id'] ?? null, $coverIds);
+        $payload = is_array($data['open_library_payload'] ?? null)
+            ? $data['open_library_payload']
+            : [];
 
-        $book = Book::query()->create([
-            'user_id' => $user->id,
-            'title' => $data['title'],
-            'author' => $data['author'] ?? null,
-            'publisher' => $data['publisher'] ?? null,
-            'spine_color' => $data['spine_color'] ?? '#6f4e37',
-            'open_library_work_key' => $data['open_library_work_key'] ?? null,
-            'open_library_edition_key' => $data['open_library_edition_key'] ?? null,
-            'open_library_cover_id' => $selectedCoverId,
-            'open_library_cover_ids' => $coverIds,
-        ]);
+        if (
+            $payload === []
+            && (filled($data['open_library_work_key'] ?? null) || filled($data['open_library_edition_key'] ?? null))
+        ) {
+            $selection = $this->openLibrary->selection(
+                $user->email,
+                $data['open_library_work_key'] ?? null,
+                $data['open_library_edition_key'] ?? null,
+            );
+            $payload = is_array($selection['payload'] ?? null) ? $selection['payload'] : [];
+        }
+
+        $book = Book::query()->create(array_merge(
+            ['user_id' => $user->id],
+            $this->bookAttributes($data, $payload),
+        ));
 
         $this->placeBook(
             $book,
@@ -109,12 +128,51 @@ class LibraryController extends Controller
             'cover_id' => ['required', 'integer', 'min:1'],
         ]);
 
-        $coverIds = $this->normalizedCoverIds($book->open_library_cover_ids ?? []);
+        $coverIds = $this->availableCoverIds($book);
         abort_unless(in_array((int) $data['cover_id'], $coverIds, true), 422);
 
         $book->update([
             'open_library_cover_id' => (int) $data['cover_id'],
         ]);
+
+        return response()->json($this->libraryState->payload($user));
+    }
+
+    public function refreshBookMetadata(Request $request): JsonResponse
+    {
+        $user = $this->currentUser();
+        $data = $request->validate([
+            'book_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'book_ids.*' => ['integer'],
+        ]);
+
+        $books = Book::query()
+            ->where('user_id', $user->id)
+            ->whereIn('id', $data['book_ids'])
+            ->get();
+
+        foreach ($books as $book) {
+            if (! $book->open_library_work_key && ! $book->open_library_edition_key) {
+                continue;
+            }
+
+            $selection = $this->openLibrary->selection($user->email, $book->open_library_work_key, $book->open_library_edition_key);
+            $payload = is_array($selection['payload'] ?? null) ? $selection['payload'] : [];
+
+            if ($payload === []) {
+                continue;
+            }
+
+            $book->update($this->bookAttributes([
+                'title' => $book->title,
+                'author' => $book->author,
+                'publisher' => $book->publisher,
+                'spine_color' => $book->spine_color,
+                'open_library_work_key' => $book->open_library_work_key,
+                'open_library_edition_key' => $book->open_library_edition_key,
+                'open_library_cover_id' => $book->open_library_cover_id,
+            ], $payload));
+        }
 
         return response()->json($this->libraryState->payload($user));
     }
@@ -283,12 +341,35 @@ class LibraryController extends Controller
     }
 
     /**
-     * @param  array<int, mixed>  $coverIds
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function bookAttributes(array $data, array $payload): array
+    {
+        $coverIds = $this->openLibrary->coverIdsFromPayload($payload);
+
+        return [
+            'title' => $this->openLibrary->metadataTitle($payload) ?? $data['title'],
+            'author' => $this->openLibrary->metadataAuthor($payload) ?? ($data['author'] ?? null),
+            'publisher' => $this->openLibrary->metadataPublisher($payload) ?? ($data['publisher'] ?? null),
+            'spine_color' => $data['spine_color'] ?? '#6f4e37',
+            'open_library_work_key' => $this->normalizedKey(data_get($payload, 'work.key'), '/works/')
+                ?? ($data['open_library_work_key'] ?? null),
+            'open_library_edition_key' => $this->normalizedKey(data_get($payload, 'edition.key'), '/books/')
+                ?? ($data['open_library_edition_key'] ?? null),
+            'open_library_cover_id' => $this->selectedCoverId($data['open_library_cover_id'] ?? null, $coverIds),
+            'open_library_cover_ids' => $coverIds,
+            'open_library_payload' => $payload !== [] ? $payload : null,
+        ];
+    }
+
+    /**
      * @return array<int, int>
      */
-    private function normalizedCoverIds(array $coverIds): array
+    private function availableCoverIds(Book $book): array
     {
-        return collect($coverIds)
+        return collect($book->open_library_cover_ids ?: $this->openLibrary->coverIdsFromPayload($book->open_library_payload ?? []))
             ->map(fn (mixed $coverId): int => (int) $coverId)
             ->filter(fn (int $coverId): bool => $coverId > 0)
             ->unique()
@@ -308,5 +389,20 @@ class LibraryController extends Controller
         }
 
         return $coverIds[0] ?? null;
+    }
+
+    private function normalizedKey(mixed $value, string $prefix): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $value = trim($value);
+
+        if (str_starts_with($value, $prefix)) {
+            return substr($value, strlen($prefix));
+        }
+
+        return ltrim($value, '/');
     }
 }

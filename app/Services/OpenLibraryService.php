@@ -2,13 +2,12 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Client\Pool;
-use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class OpenLibraryService
 {
-    public function search(string $query, int $limit = 6): array
+    public function search(string $contactEmail, string $query, int $limit = 6): array
     {
         $query = trim($query);
 
@@ -16,59 +15,88 @@ class OpenLibraryService
             return [];
         }
 
-        $response = Http::acceptJson()
-            ->timeout(10)
-            ->get('https://openlibrary.org/search.json', [
-                'q' => $query,
-                'limit' => $limit,
-            ]);
+        $response = $this->requestJson($contactEmail, '/search.json', [
+            'q' => $query,
+            'limit' => $limit,
+        ]);
 
-        if (! $response->successful()) {
-            return [];
-        }
-
-        $docs = collect($response->json('docs', []))
+        return collect($response['docs'] ?? [])
             ->filter(fn (mixed $doc): bool => is_array($doc) && filled($doc['title'] ?? null))
             ->take($limit)
-            ->values();
+            ->map(fn (array $doc): ?array => $this->formatSearchResult($doc))
+            ->filter()
+            ->values()
+            ->all();
+    }
 
-        if ($docs->isEmpty()) {
-            return [];
+    public function selection(string $contactEmail, ?string $workKey, ?string $editionKey): array
+    {
+        $editionKey = $this->normalizeKey($editionKey, '/books/');
+        $workKey = $this->normalizeKey($workKey, '/works/');
+
+        $edition = $editionKey ? $this->requestJson($contactEmail, "/books/{$editionKey}.json") : [];
+        $work = $workKey ? $this->requestJson($contactEmail, "/works/{$workKey}.json") : [];
+
+        if ($work === []) {
+            $workKey = $this->normalizeKey(data_get($edition, 'works.0.key'), '/works/');
+            $work = $workKey ? $this->requestJson($contactEmail, "/works/{$workKey}.json") : [];
         }
 
-        $detailResponses = Http::pool(function (Pool $pool) use ($docs): array {
-            $requests = [];
+        if ($edition === []) {
+            $editionKey = $this->normalizeKey(data_get($work, 'edition_key.0'), '/books/');
+            $edition = $editionKey ? $this->requestJson($contactEmail, "/books/{$editionKey}.json") : [];
+        }
 
-            foreach ($docs as $index => $doc) {
-                $editionKey = $this->normalizeKey($doc['edition_key'][0] ?? null, '/books/');
-                $workKey = $this->normalizeKey($doc['key'] ?? null, '/works/');
+        $authors = $this->authors($contactEmail, $edition, $work);
+        $payload = array_filter([
+            'edition' => $edition,
+            'work' => $work,
+            'authors' => $authors,
+        ], fn (array $value): bool => $value !== []);
+        $coverIds = $this->coverIdsFromPayload($payload);
 
-                if ($editionKey) {
-                    $requests["edition-{$index}"] = $pool->as("edition-{$index}")
-                        ->acceptJson()
-                        ->timeout(10)
-                        ->get("https://openlibrary.org/books/{$editionKey}.json");
-                }
+        return [
+            'title' => $this->metadataTitle($payload),
+            'author' => $this->metadataAuthor($payload),
+            'publisher' => $this->metadataPublisher($payload),
+            'publishYear' => $this->metadataPublishYear($payload),
+            'workKey' => $this->normalizeKey(data_get($work, 'key'), '/works/') ?? $workKey,
+            'editionKey' => $this->normalizeKey(data_get($edition, 'key'), '/books/') ?? $editionKey,
+            'covers' => $this->coverOptions($coverIds),
+            'payload' => $payload,
+        ];
+    }
 
-                if ($workKey) {
-                    $requests["work-{$index}"] = $pool->as("work-{$index}")
-                        ->acceptJson()
-                        ->timeout(10)
-                        ->get("https://openlibrary.org/works/{$workKey}.json");
-                }
-            }
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int, int>
+     */
+    public function coverIdsFromPayload(array $payload): array
+    {
+        return collect(array_merge(
+            data_get($payload, 'edition.covers', []),
+            data_get($payload, 'work.covers', []),
+        ))
+            ->map(fn (mixed $coverId): int => (int) $coverId)
+            ->filter(fn (int $coverId): bool => $coverId > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
 
-            return $requests;
-        });
-
-        return $docs
-            ->map(function (array $doc, int $index) use ($detailResponses): ?array {
-                $edition = $this->jsonPayload($detailResponses["edition-{$index}"] ?? null);
-                $work = $this->jsonPayload($detailResponses["work-{$index}"] ?? null);
-
-                return $this->formatSearchResult($doc, $edition, $work);
-            })
-            ->filter()
+    /**
+     * @param  array<int, int>  $coverIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function coverOptions(array $coverIds): array
+    {
+        return collect($coverIds)
+            ->take(8)
+            ->map(fn (int $coverId): array => [
+                'id' => $coverId,
+                'url' => $this->coverUrl($coverId, 'M'),
+                'thumbnailUrl' => $this->coverUrl($coverId, 'S'),
+            ])
             ->values()
             ->all();
     }
@@ -79,56 +107,155 @@ class OpenLibraryService
     }
 
     /**
-     * @param  array<string, mixed>  $doc
-     * @param  array<string, mixed>  $edition
-     * @param  array<string, mixed>  $work
-     * @return array<string, mixed>|null
+     * @param  array<string, mixed>  $payload
      */
-    private function formatSearchResult(array $doc, array $edition, array $work): ?array
+    public function metadataTitle(array $payload): ?string
     {
-        $title = trim((string) ($doc['title'] ?? ''));
+        return $this->stringOrNull(data_get($payload, 'edition.title'))
+            ?? $this->stringOrNull(data_get($payload, 'work.title'));
+    }
 
-        if ($title === '') {
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function metadataAuthor(array $payload): ?string
+    {
+        $authors = collect(data_get($payload, 'authors', []))
+            ->map(fn (mixed $author): ?string => is_array($author) ? $this->stringOrNull($author['name'] ?? null) : null)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($authors->isNotEmpty()) {
+            return $authors->implode(', ');
+        }
+
+        return $this->stringOrNull(data_get($payload, 'edition.by_statement'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function metadataPublisher(array $payload): ?string
+    {
+        return $this->firstString(data_get($payload, 'edition.publishers', []));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function metadataPublishYear(array $payload): ?string
+    {
+        $publishDate = $this->stringOrNull(data_get($payload, 'edition.publish_date'))
+            ?? $this->stringOrNull(data_get($payload, 'work.first_publish_date'));
+
+        if (! $publishDate) {
             return null;
         }
 
-        $author = collect($doc['author_name'] ?? [])->filter()->implode(', ');
-        $publisher = $this->firstString($edition['publishers'] ?? $doc['publisher'] ?? []);
-        $covers = $this->coverOptions(array_merge(
-            $edition['covers'] ?? [],
-            $work['covers'] ?? [],
-            array_filter([(int) ($doc['cover_i'] ?? 0)]),
-        ));
+        if (preg_match('/(\d{4})/', $publishDate, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return $publishDate;
+    }
+
+    /**
+     * @param  array<string, mixed>  $doc
+     * @return array<string, mixed>|null
+     */
+    private function formatSearchResult(array $doc): ?array
+    {
+        $title = $this->stringOrNull($doc['title'] ?? null);
+
+        if (! $title) {
+            return null;
+        }
+
+        $coverId = (int) ($doc['cover_i'] ?? 0);
 
         return [
             'title' => $title,
-            'author' => $author !== '' ? $author : null,
-            'publisher' => $publisher,
-            'publishYear' => isset($doc['first_publish_year']) ? (int) $doc['first_publish_year'] : null,
-            'workKey' => $this->normalizeKey($work['key'] ?? $doc['key'] ?? null, '/works/'),
-            'editionKey' => $this->normalizeKey($edition['key'] ?? ($doc['edition_key'][0] ?? null), '/books/'),
-            'covers' => $covers,
+            'author' => collect($doc['author_name'] ?? [])->filter()->implode(', ') ?: null,
+            'publisher' => $this->firstString($doc['publisher'] ?? []),
+            'publishYear' => isset($doc['first_publish_year']) ? (string) $doc['first_publish_year'] : null,
+            'workKey' => $this->normalizeKey($doc['key'] ?? null, '/works/'),
+            'editionKey' => $this->normalizeKey($doc['edition_key'][0] ?? null, '/books/'),
+            'cover' => $coverId > 0 ? [
+                'id' => $coverId,
+                'url' => $this->coverUrl($coverId, 'M'),
+                'thumbnailUrl' => $this->coverUrl($coverId, 'S'),
+            ] : null,
         ];
     }
 
     /**
-     * @param  array<int, mixed>  $coverIds
+     * @param  array<string, mixed>  $edition
+     * @param  array<string, mixed>  $work
      * @return array<int, array<string, mixed>>
      */
-    private function coverOptions(array $coverIds): array
+    private function authors(string $contactEmail, array $edition, array $work): array
     {
-        return collect($coverIds)
-            ->map(fn (mixed $coverId): int => (int) $coverId)
-            ->filter(fn (int $coverId): bool => $coverId > 0)
+        $authorKeys = collect(data_get($edition, 'authors', []))
+            ->map(fn (mixed $author): ?string => is_array($author) ? $this->normalizeKey($author['key'] ?? null, '/authors/') : null)
+            ->merge(
+                collect(data_get($work, 'authors', []))
+                    ->map(fn (mixed $author): ?string => is_array($author) ? $this->normalizeKey(data_get($author, 'author.key'), '/authors/') : null),
+            )
+            ->filter()
             ->unique()
-            ->take(8)
+            ->take(5)
+            ->values();
+
+        return $authorKeys
+            ->map(fn (string $authorKey): array => $this->requestJson($contactEmail, "/authors/{$authorKey}.json"))
+            ->filter(fn (array $author): bool => $author !== [])
             ->values()
-            ->map(fn (int $coverId): array => [
-                'id' => $coverId,
-                'url' => $this->coverUrl($coverId, 'M'),
-                'thumbnailUrl' => $this->coverUrl($coverId, 'S'),
-            ])
             ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function requestJson(string $contactEmail, string $path, array $query = []): array
+    {
+        $this->throttle();
+
+        $response = Http::baseUrl('https://openlibrary.org')
+            ->acceptJson()
+            ->timeout(10)
+            ->withUserAgent(sprintf('My Library/1.0 (%s)', $contactEmail))
+            ->withHeaders([
+                'From' => $contactEmail,
+            ])
+            ->get($path, $query);
+
+        if (! $response->successful()) {
+            return [];
+        }
+
+        $payload = $response->json();
+
+        return is_array($payload) ? $payload : [];
+    }
+
+    private function throttle(): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        Cache::lock('open-library-request-throttle', 5)->block(5, function (): void {
+            $minimumSecondsBetweenRequests = 1 / 3;
+            $lastRequestAt = (float) Cache::get('open-library-last-request-at', 0.0);
+            $elapsed = microtime(true) - $lastRequestAt;
+
+            if ($elapsed < $minimumSecondsBetweenRequests) {
+                usleep((int) (($minimumSecondsBetweenRequests - $elapsed) * 1_000_000));
+            }
+
+            Cache::forever('open-library-last-request-at', microtime(true));
+        });
     }
 
     /**
@@ -137,14 +264,12 @@ class OpenLibraryService
     private function firstString(array|string|null $value): ?string
     {
         if (is_string($value)) {
-            $value = trim($value);
-
-            return $value !== '' ? $value : null;
+            return $this->stringOrNull($value);
         }
 
         return collect($value)
-            ->filter(fn (mixed $item): bool => is_string($item) && trim($item) !== '')
-            ->map(fn (string $item): string => trim($item))
+            ->map(fn (mixed $item): ?string => is_string($item) ? $this->stringOrNull($item) : null)
+            ->filter()
             ->first();
     }
 
@@ -163,17 +288,14 @@ class OpenLibraryService
         return ltrim($value, '/');
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function jsonPayload(?Response $response): array
+    private function stringOrNull(mixed $value): ?string
     {
-        if (! $response || ! $response->successful()) {
-            return [];
+        if (! is_string($value)) {
+            return null;
         }
 
-        $payload = $response->json();
+        $value = trim($value);
 
-        return is_array($payload) ? $payload : [];
+        return $value !== '' ? $value : null;
     }
 }
