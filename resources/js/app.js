@@ -34,7 +34,6 @@ if (initialStateElement) {
     const metadataRefreshList = document.getElementById('metadata-refresh-list');
     const refreshSelectedBooksButton = document.getElementById('refresh-selected-books');
     const refreshAllBooksButton = document.getElementById('refresh-all-books');
-    const bookRotationControls = document.getElementById('book-rotation-controls');
     const removeBookButton = document.getElementById('remove-book');
     const addNoteForm = document.getElementById('add-note-form');
     const openBookshelfPreferencesButton = document.getElementById('open-bookshelf-preferences');
@@ -703,10 +702,6 @@ if (initialStateElement) {
 
         selectedBookLabel.textContent = `${selected.title}${selected.author ? ` by ${selected.author}` : ''}`;
         selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
-        const buttons = bookRotationControls.querySelectorAll('button[data-rotation-mode]');
-        for (const button of buttons) {
-            button.classList.toggle('secondary-btn', button.dataset.rotationMode !== (selected.rotationMode || DEFAULT_ROTATION_MODE));
-        }
 
         renderCoverOptions(
             selectedBookCoverPicker,
@@ -898,8 +893,6 @@ if (initialStateElement) {
         if (book) {
             selectedBookId = book.id;
             renderSelectedBook();
-            openPanel('controls');
-            scrollToElementAfterDelay('selected-book-label');
             return;
         }
 
@@ -923,7 +916,6 @@ if (initialStateElement) {
 
         selectedBookId = book.id;
         renderSelectedBook();
-        openPanel('controls');
 
         dragState = {
             pointerId: event.pointerId,
@@ -974,7 +966,6 @@ if (initialStateElement) {
         if (!moved) {
             selectedBookId = bookId;
             renderSelectedBook();
-            openPanel('controls');
             return;
         }
 
@@ -1069,21 +1060,6 @@ if (initialStateElement) {
         });
         applyState(updated);
         metadataRefreshFeedback.textContent = 'All Open Library books were refreshed.';
-    });
-
-    bookRotationControls.addEventListener('click', async (event) => {
-        const target = event.target.closest('button[data-rotation-mode]');
-        if (!target || !selectedBookId) return;
-        const selected = state.books.find((book) => book.id === selectedBookId);
-        if (!selected) return;
-
-        const updated = await fetchJson(`/api/books/${selectedBookId}/position`, 'PATCH', {
-            shelf_index: selected.shelfIndex,
-            position_index: selected.positionIndex,
-            rotation_mode: target.dataset.rotationMode,
-        });
-
-        applyState(updated);
     });
 
     removeBookButton.addEventListener('click', async () => {
