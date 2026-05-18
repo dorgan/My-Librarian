@@ -8,7 +8,12 @@ function setupPWAInstall() {
     const installSection = document.getElementById('install-section');
     const installButton = document.getElementById('install-button');
     
-    if (!installSection || !installButton) return;
+    if (!installSection || !installButton) {
+        console.log('Install elements not found yet');
+        return false;
+    }
+    
+    console.log('Setting up PWA install. isIOS:', isIOS, 'isAndroid:', isAndroid);
     
     // On iOS/Safari, show manual instructions
     if (isIOS) {
@@ -21,7 +26,8 @@ function setupPWAInstall() {
             </ol>
         `;
         installSection.style.display = 'block';
-        return;
+        console.log('iOS install instructions shown');
+        return true;
     }
     
     // On Android, use the beforeinstallprompt event
@@ -37,7 +43,11 @@ function setupPWAInstall() {
                 installSection.style.display = 'none';
             }
         });
+        console.log('Android install button setup');
+        return true;
     }
+    
+    return false;
 }
 
 window.addEventListener('beforeinstallprompt', (event) => {
@@ -60,13 +70,29 @@ window.addEventListener('appinstalled', () => {
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {
-            // If registration fails, app behavior remains unchanged.
+            console.log('Service worker registration failed');
         });
         
-        // Setup PWA install for iOS or if beforeinstallprompt didn't fire
-        setTimeout(setupPWAInstall, 1000);
+        setupPWAInstall();
     });
 }
+
+// Also try to setup immediately in case load event already fired
+document.addEventListener('DOMContentLoaded', () => {
+    setupPWAInstall();
+});
+
+// Fallback - try every 500ms for 3 seconds
+let attempts = 0;
+const setupInterval = setInterval(() => {
+    if (setupPWAInstall()) {
+        clearInterval(setupInterval);
+    }
+    attempts++;
+    if (attempts > 6) {
+        clearInterval(setupInterval);
+    }
+}, 500);
 
 const initialStateElement = document.getElementById('initial-state');
 
