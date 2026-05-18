@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('passkey_credentials', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->text('credential_id')->unique();
+            $table->text('credential_id');
             $table->longText('public_key');
             $table->unsignedBigInteger('sign_count')->default(0);
             $table->json('transports')->nullable();
