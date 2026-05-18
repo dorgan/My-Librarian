@@ -13,8 +13,6 @@ use App\Services\OpenLibraryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class LibraryController extends Controller
@@ -26,16 +24,16 @@ class LibraryController extends Controller
         private readonly OpenLibraryService $openLibrary,
     ) {}
 
-    public function state(): JsonResponse
+    public function state(Request $request): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
 
         return response()->json($this->libraryState->payload($user));
     }
 
     public function searchOpenLibrary(Request $request): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $data = $request->validate([
             'query' => ['required', 'string', 'max:180'],
         ]);
@@ -47,7 +45,7 @@ class LibraryController extends Controller
 
     public function openLibrarySelection(Request $request): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $data = $request->validate([
             'work_key' => ['nullable', 'string', 'max:60'],
             'edition_key' => ['nullable', 'string', 'max:60'],
@@ -60,7 +58,7 @@ class LibraryController extends Controller
 
     public function storeBook(Request $request): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:180'],
@@ -109,7 +107,7 @@ class LibraryController extends Controller
 
     public function moveBook(Request $request, Book $book): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $this->assertOwnership($book->user_id === $user->id);
 
         $data = $request->validate([
@@ -130,7 +128,7 @@ class LibraryController extends Controller
 
     public function updateBookCover(Request $request, Book $book): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $this->assertOwnership($book->user_id === $user->id);
 
         $data = $request->validate([
@@ -149,7 +147,7 @@ class LibraryController extends Controller
 
     public function refreshBookMetadata(Request $request): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $data = $request->validate([
             'book_ids' => ['required', 'array', 'min:1', 'max:100'],
             'book_ids.*' => ['integer'],
@@ -186,9 +184,9 @@ class LibraryController extends Controller
         return response()->json($this->libraryState->payload($user));
     }
 
-    public function destroyBook(Book $book): JsonResponse
+    public function destroyBook(Request $request, Book $book): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $this->assertOwnership($book->user_id === $user->id);
 
         DB::transaction(function () use ($book): void {
@@ -213,7 +211,7 @@ class LibraryController extends Controller
 
     public function storeNote(Request $request): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:180'],
@@ -238,7 +236,7 @@ class LibraryController extends Controller
 
     public function updateNote(Request $request, WantToReadNote $note): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $this->assertOwnership($note->user_id === $user->id);
 
         $data = $request->validate([
@@ -252,9 +250,9 @@ class LibraryController extends Controller
         return response()->json($this->libraryState->payload($user));
     }
 
-    public function destroyNote(WantToReadNote $note): JsonResponse
+    public function destroyNote(Request $request, WantToReadNote $note): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
         $this->assertOwnership($note->user_id === $user->id);
 
         DB::transaction(function () use ($note): void {
@@ -271,7 +269,7 @@ class LibraryController extends Controller
 
     public function updatePreferences(Request $request): JsonResponse
     {
-        $user = $this->currentUser();
+        $user = $this->userFromRequest($request);
 
         $data = $request->validate([
             'bookcase_theme' => ['required', Rule::in(['oak', 'walnut', 'midnight'])],
@@ -372,15 +370,13 @@ class LibraryController extends Controller
             ->update(['rotation_mode' => 'upright']);
     }
 
-    private function currentUser(): User
+    private function userFromRequest(Request $request): User
     {
-        return User::query()->firstOrCreate(
-            ['email' => 'demo@my-library.local'],
-            [
-                'name' => 'Demo Reader',
-                'password' => Hash::make(Str::random(40)),
-            ],
-        );
+        $user = $request->user();
+
+        abort_unless($user instanceof User, 401);
+
+        return $user;
     }
 
     private function assertOwnership(bool $isOwned): void
