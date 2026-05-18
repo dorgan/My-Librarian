@@ -1,51 +1,75 @@
 <!doctype html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>My Library</title>
+    <title>My Librarian</title>
     @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     @endif
 </head>
+
 <body>
-<div class="app-shell">
-    <main class="main-layout">
-        <section class="bookcase-panel" aria-label="Bookcase">
-            <canvas id="bookcase-canvas" aria-label="Interactive bookcase" role="img"></canvas>
-        </section>
-
-        <aside id="controls-panel" class="controls-panel" aria-label="Book and preference controls" aria-hidden="true">
-            <div class="panel-header">
-                <h2>Library controls</h2>
-                <button type="button" id="close-controls" class="panel-close" aria-label="Close controls">Close</button>
-            </div>
-            <section>
-                <h2>Search Open Library</h2>
-                <form id="book-search-form" class="inline-form inline-form--search">
-                    <label class="search-field">Book title or author <input name="query" maxlength="180" placeholder="Search by title or author"></label>
-                    <button type="submit">Search</button>
-                </form>
-                <p id="book-search-feedback" class="hint" aria-live="polite">Search Open Library to select the book you want to add.</p>
-                <div id="book-search-results" class="search-results" aria-live="polite"></div>
+    <div class="app-shell">
+        <main class="main-layout">
+            <section class="bookcase-panel" aria-label="Bookcase">
+                <canvas id="bookcase-canvas" aria-label="Interactive bookcase" role="img"></canvas>
             </section>
 
-            <section>
-                <h2>Add read book</h2>
-                <form id="add-book-form" class="stacked-form">
-                    <label>Title <input name="title" required maxlength="180"></label>
-                    <label>Author <input name="author" maxlength="180"></label>
-                    <label>Publisher <input name="publisher" maxlength="180"></label>
-                    <label>Accent color <input name="spine_color" type="color" value="#6f4e37"></label>
+            <aside id="controls-panel" class="controls-panel" aria-label="Book and preference controls"
+                aria-hidden="true">
+                <div class="panel-header">
+                    <h2>Library controls</h2>
+                    <button type="button" id="close-controls" class="panel-close"
+                        aria-label="Close controls">Close</button>
+                </div>
+                <section>
+                    <h2>Search Open Library</h2>
+                    <form id="book-search-form" class="inline-form inline-form--search">
+                        <label class="search-field">Book title or author <input name="query" maxlength="180"
+                                placeholder="Search by title or author"></label>
+                        <button type="submit">Search</button>
+                    </form>
+                    <p id="book-search-feedback" class="hint" aria-live="polite">Search Open Library to select the
+                        book you want to add.</p>
+                    <div id="book-search-results" class="search-results" aria-live="polite"></div>
+                </section>
+
+                <section>
+                    <h2>Add read book</h2>
+                    <form id="add-book-form" class="stacked-form">
+                        <label>Title <input name="title" required maxlength="180"></label>
+                        <label>Author <input name="author" maxlength="180"></label>
+                        <label>Publisher <input name="publisher" maxlength="180"></label>
+                        <label>Accent color <input name="spine_color" type="color" value="#6f4e37"></label>
+                        <div>
+                            <p class="cover-picker-label">Saved cover choices</p>
+                            <div id="add-book-cover-picker" class="cover-picker" aria-live="polite"></div>
+                        </div>
+                        <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
+                        <label>Position <input name="position_index" type="number" min="0"
+                                value="0"></label>
+                        <button type="submit">Add to bookcase</button>
+                    </form>
+                </section>
+
+                <section>
+                    <h2>Selected book</h2>
+                    <p id="selected-book-label">No book selected</p>
+                    <p id="selected-book-meta" class="selected-book-meta"></p>
                     <div>
-                        <p class="cover-picker-label">Saved cover choices</p>
-                        <div id="add-book-cover-picker" class="cover-picker" aria-live="polite"></div>
+                        <p class="cover-picker-label">Displayed cover</p>
+                        <div id="selected-book-cover-picker" class="cover-picker" aria-live="polite"></div>
                     </div>
-                    <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
-                    <label>Position <input name="position_index" type="number" min="0" value="0"></label>
-                    <button type="submit">Add to bookcase</button>
-                </form>
-            </section>
+                    <form id="move-book-form" class="inline-form">
+                        <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
+                        <label>Position <input name="position_index" type="number" min="0"
+                                value="0"></label>
+                        <button type="submit">Move</button>
+                    </form>
+                    <button id="remove-book" type="button" class="danger-btn">Remove selected</button>
+                </section>
 
             <section>
                 <h2>Selected book</h2>
@@ -69,16 +93,25 @@
                 <button id="open-bookshelf-preferences" type="button">Open bookshelf preferences</button>
             </section>
 
-            <section>
-                <h2>Metadata refresh</h2>
-                <p id="metadata-refresh-feedback" class="hint" aria-live="polite">Select one or more saved books to refresh their cached Open Library metadata.</p>
-                <div id="metadata-refresh-list" class="metadata-refresh-list" aria-live="polite"></div>
-                <div class="metadata-refresh-actions">
-                    <button id="refresh-selected-books" type="button">Refresh selected</button>
-                    <button id="refresh-all-books" type="button" class="secondary-btn">Refresh all Open Library books</button>
+            <section id="notes-panel" class="notes-panel" aria-label="Want to read notes" aria-hidden="true">
+                <div class="notes-inner">
+                    <div class="panel-header">
+                        <h2>Want to read notes</h2>
+                        <button type="button" id="close-notes" class="panel-close"
+                            aria-label="Close notes">Close</button>
+                    </div>
+                    <form id="add-note-form" class="stacked-form">
+                        <label>Title <input name="title" required maxlength="180"></label>
+                        <label>Author <input name="author" maxlength="180"></label>
+                        <label>Note
+                            <textarea name="note" rows="3" maxlength="800"></textarea>
+                        </label>
+                        <button type="submit">Add note</button>
+                    </form>
+                    <ul id="notes-list" class="notes-list" aria-live="polite"></ul>
                 </div>
             </section>
-        </aside>
+        </main>
 
         <section id="notes-panel" class="notes-panel" aria-label="Want to read notes" aria-hidden="true">
             <div class="notes-inner">
@@ -142,15 +175,7 @@
         </aside>
     </main>
 
-    <div id="overlay-backdrop" class="overlay-backdrop" hidden></div>
-    <button id="toggle-controls" type="button" class="floating-btn floating-btn--controls" aria-controls="controls-panel" aria-expanded="false" aria-label="Open controls panel">
-        Controls
-    </button>
-    <button id="toggle-notes" type="button" class="floating-btn floating-btn--notes" aria-controls="notes-panel" aria-expanded="false" aria-label="Open notes panel">
-        Notes
-    </button>
-</div>
-
-<script id="initial-state" type="application/json">@json($initialState)</script>
+    <script id="initial-state" type="application/json">@json($initialState)</script>
 </body>
+
 </html>
