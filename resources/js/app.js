@@ -925,13 +925,12 @@ if (initialStateElement) {
         renderSelectedBook();
 
         const now = Date.now();
-        const isDoubleTap = Boolean(
+        const isDoubleTap =
             lastBookTap
             && lastBookTap.bookId === bookId
             && lastBookTap.pointerType === pointerType
             && (now - lastBookTap.time) <= DOUBLE_ACTIVATION_MAX_MS
-            && Math.hypot(x - lastBookTap.x, y - lastBookTap.y) <= DOUBLE_ACTIVATION_MAX_DISTANCE,
-        );
+            && Math.hypot(x - lastBookTap.x, y - lastBookTap.y) <= DOUBLE_ACTIVATION_MAX_DISTANCE;
 
         if (isDoubleTap) {
             lastBookTap = null;
@@ -1037,7 +1036,14 @@ if (initialStateElement) {
             applyState(updated);
         } catch (error) {
             window.console.error('Unable to save book position update.', error);
-            ensureAnimatedBooks();
+            if (anim) {
+                const originalTarget = bookTargetRect(selected);
+                anim.tx = originalTarget.x;
+                anim.ty = originalTarget.y;
+                anim.tw = originalTarget.w;
+                anim.th = originalTarget.h;
+                anim.ta = originalTarget.a;
+            }
         }
     });
 
