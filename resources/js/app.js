@@ -84,6 +84,14 @@ if (initialStateElement) {
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
         setTimeout(() => document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), delay);
     };
+    const isDraggingBook = (bookId) => Boolean(dragState && dragState.bookId === bookId);
+    const openPanel = (panel) => {
+        controlsOpen = panel === 'controls';
+        notesOpen = panel === 'notes';
+        bookshelfPreferencesOpen = panel === 'bookshelfPreferences';
+        notesPreferencesOpen = panel === 'notesPreferences';
+        syncPanels();
+    };
 
     /** Return the book (or null) whose spine rect contains (x, y) in canvas coordinates */
     const findBookAtPoint = (x, y) => {
@@ -459,7 +467,7 @@ if (initialStateElement) {
             if (!anim) continue;
 
             if (reducedMotion) {
-                if (!(dragState && dragState.bookId === book.id)) {
+                if (!isDraggingBook(book.id)) {
                     anim.x = anim.tx;
                     anim.y = anim.ty;
                     anim.w = anim.tw;
@@ -467,7 +475,7 @@ if (initialStateElement) {
                 }
                 anim.a = anim.ta;
             } else {
-                if (!(dragState && dragState.bookId === book.id)) {
+                if (!isDraggingBook(book.id)) {
                     anim.x += (anim.tx - anim.x) * 0.2;
                     anim.y += (anim.ty - anim.y) * 0.2;
                     anim.w += (anim.tw - anim.w) * 0.2;
@@ -868,25 +876,18 @@ if (initialStateElement) {
         const decors = getDecorationRects();
 
         if (hitTest(x, y, decors.preferences)) {
-            bookshelfPreferencesOpen = true;
-            controlsOpen = false;
-            notesOpen = false;
-            notesPreferencesOpen = false;
-            syncPanels();
+            openPanel('bookshelfPreferences');
             scrollToElementAfterDelay('bookshelf-preferences-form');
             return;
         }
 
         if (hitTest(x, y, decors.notes)) {
-            notesOpen = true;
-            controlsOpen = false;
-            syncPanels();
+            openPanel('notes');
             return;
         }
 
         if (hitTest(x, y, decors.addBook)) {
-            controlsOpen = true;
-            syncPanels();
+            openPanel('controls');
             scrollToElementAfterDelay('book-search-form');
             return;
         }
@@ -896,9 +897,7 @@ if (initialStateElement) {
         if (book) {
             selectedBookId = book.id;
             renderSelectedBook();
-            controlsOpen = true;
-            bookshelfPreferencesOpen = false;
-            syncPanels();
+            openPanel('controls');
             scrollToElementAfterDelay('selected-book-label');
             return;
         }
@@ -906,11 +905,7 @@ if (initialStateElement) {
         // Click on empty shelf — close panels
         selectedBookId = null;
         renderSelectedBook();
-        controlsOpen = false;
-        notesOpen = false;
-        bookshelfPreferencesOpen = false;
-        notesPreferencesOpen = false;
-        syncPanels();
+        openPanel(null);
     };
 
     canvas.addEventListener('pointerdown', (event) => {
@@ -927,8 +922,7 @@ if (initialStateElement) {
 
         selectedBookId = book.id;
         renderSelectedBook();
-        controlsOpen = true;
-        syncPanels();
+        openPanel('controls');
 
         dragState = {
             pointerId: event.pointerId,
@@ -979,8 +973,7 @@ if (initialStateElement) {
         if (!moved) {
             selectedBookId = bookId;
             renderSelectedBook();
-            controlsOpen = true;
-            syncPanels();
+            openPanel('controls');
             return;
         }
 
@@ -1173,13 +1166,11 @@ if (initialStateElement) {
     });
 
     openBookshelfPreferencesButton.addEventListener('click', () => {
-        bookshelfPreferencesOpen = true;
-        syncPanels();
+        openPanel('bookshelfPreferences');
     });
 
     openNotesPreferencesButton.addEventListener('click', () => {
-        notesPreferencesOpen = true;
-        syncPanels();
+        openPanel('notesPreferences');
     });
 
     closeBookshelfPreferencesButton.addEventListener('click', () => {
