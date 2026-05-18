@@ -292,7 +292,11 @@ if (initialStateElement) {
             const image = document.createElement('img');
             image.className = 'cover-option-preview';
             image.alt = '';
-            image.src = cover.previewUrl;
+            const previewUrl = safeCoverUrl(cover.previewUrl);
+            if (!previewUrl) {
+                continue;
+            }
+            image.src = previewUrl;
             button.appendChild(image);
             container.appendChild(button);
         }

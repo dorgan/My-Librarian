@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Http;
 
 class OpenLibraryService
 {
+    private const MINIMUM_SECONDS_BETWEEN_REQUESTS = 1 / 3;
+
     public function search(string $contactEmail, string $query, int $limit = 6): array
     {
         $query = trim($query);
@@ -246,12 +248,11 @@ class OpenLibraryService
         }
 
         Cache::lock('open-library-request-throttle', 5)->block(5, function (): void {
-            $minimumSecondsBetweenRequests = 1 / 3;
             $lastRequestAt = (float) Cache::get('open-library-last-request-at', 0.0);
             $elapsed = microtime(true) - $lastRequestAt;
 
-            if ($elapsed < $minimumSecondsBetweenRequests) {
-                usleep((int) (($minimumSecondsBetweenRequests - $elapsed) * 1_000_000));
+            if ($elapsed < self::MINIMUM_SECONDS_BETWEEN_REQUESTS) {
+                usleep((int) ((self::MINIMUM_SECONDS_BETWEEN_REQUESTS - $elapsed) * 1_000_000));
             }
 
             Cache::forever('open-library-last-request-at', microtime(true));
