@@ -26,8 +26,28 @@
             aria-label="Open library controls">Library controls</button>
         <button type="button" id="toggle-notes" class="floating-btn" aria-expanded="false"
             aria-label="Open want to read notes">Want to read notes</button>
+        <button type="button" id="toggle-search" class="floating-btn" aria-expanded="false"
+            aria-label="Search library">Search library</button>
 
         <div id="overlay-backdrop" class="overlay-backdrop" hidden></div>
+
+        <div id="search-panel" class="search-panel" aria-label="Search library" aria-hidden="true">
+            <div class="search-panel-inner">
+                <div class="panel-header">
+                    <h2>Search your shelves</h2>
+                    <button type="button" id="close-search" class="panel-close"
+                        aria-label="Close search">Close</button>
+                </div>
+                <form id="bookshelf-search-form" class="inline-form inline-form--search">
+                    <label class="search-field">Book title <input name="query" maxlength="180"
+                            placeholder="Find a book already on your shelves"></label>
+                    <button type="submit">Find</button>
+                </form>
+                <p id="bookshelf-search-feedback" class="hint" aria-live="polite">Search your shelves to jump to a
+                    book.</p>
+                <div id="bookshelf-search-results" class="search-results" aria-live="polite"></div>
+            </div>
+        </div>
 
         <main class="main-layout">
             <section class="bookcase-panel" aria-label="Bookcase">
@@ -45,18 +65,6 @@
             <section id="install-section" style="display: none;">
                 <button type="button" id="install-button" class="primary-btn">Install My Librarian</button>
                 <p class="hint">Install this app on your home screen for quick access and offline use.</p>
-            </section>
-
-            <section>
-                <h2>Search bookshelf</h2>
-                <form id="bookshelf-search-form" class="inline-form inline-form--search">
-                    <label class="search-field">Book title <input name="query" maxlength="180"
-                            placeholder="Find a book already on your shelves"></label>
-                    <button type="submit">Find</button>
-                </form>
-                <p id="bookshelf-search-feedback" class="hint" aria-live="polite">Use the binoculars on the shelf or
-                    search here to jump to a read book.</p>
-                <div id="bookshelf-search-results" class="search-results" aria-live="polite"></div>
             </section>
 
             <section>

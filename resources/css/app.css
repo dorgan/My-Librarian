@@ -46,6 +46,38 @@ a {
     touch-action: manipulation;
 }
 
+/* ===== SEARCH DROPDOWN PANEL ===== */
+.search-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 55;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 4px 28px rgba(0, 0, 0, 0.22);
+    padding: 1rem;
+    max-height: 80dvh;
+    overflow: auto;
+    transform: translateY(-110%);
+    opacity: 0;
+    transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
+    pointer-events: none;
+}
+
+.search-panel.open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.search-panel-inner {
+    max-width: 600px;
+    margin: 0 auto;
+    display: grid;
+    gap: 0.75rem;
+}
+
 /* ===== OVERLAY PANELS ===== */
 .controls-panel,
 .notes-panel {

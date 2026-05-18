@@ -103,6 +103,7 @@ if (initialStateElement) {
     let selectedBookId = null;
     let notesOpen = false;
     let controlsOpen = false;
+    let searchOpen = false;
     let bookshelfPreferencesOpen = false;
     let notesPreferencesOpen = false;
     let searchResults = [];
@@ -114,10 +115,13 @@ if (initialStateElement) {
     const ctx = canvas.getContext('2d');
     const toggleControlsButton = document.getElementById('toggle-controls');
     const toggleNotesButton = document.getElementById('toggle-notes');
+    const toggleSearchButton = document.getElementById('toggle-search');
     const controlsPanel = document.getElementById('controls-panel');
     const notesPanel = document.getElementById('notes-panel');
+    const searchPanel = document.getElementById('search-panel');
     const closeControlsButton = document.getElementById('close-controls');
     const closeNotesButton = document.getElementById('close-notes');
+    const closeSearchButton = document.getElementById('close-search');
     const overlayBackdrop = document.getElementById('overlay-backdrop');
     const selectedBookLabel = document.getElementById('selected-book-label');
     const selectedBookMeta = document.getElementById('selected-book-meta');
@@ -212,6 +216,7 @@ if (initialStateElement) {
     const openPanel = (panel) => {
         controlsOpen = panel === 'controls';
         notesOpen = panel === 'notes';
+        searchOpen = panel === 'search';
         bookshelfPreferencesOpen = panel === 'bookshelfPreferences';
         notesPreferencesOpen = panel === 'notesPreferences';
         syncPanels();
@@ -655,30 +660,30 @@ if (initialStateElement) {
         ctx.fillText('+', x + w / 2, y + h / 2);
     };
 
-    const drawBinoculars = (rect) => {
+    const drawSearchIcon = (rect) => {
         const { x, y, w, h } = rect;
-        const lensRadius = Math.max(5, Math.floor(w * 0.27));
-        const leftLensX = x + (w * 0.35);
-        const rightLensX = x + (w * 0.65);
-        const lensY = y + (h * 0.58);
+        const size = Math.min(w, h);
+        const cx = x + w * 0.42;
+        const cy = y + h * 0.42;
+        const radius = Math.max(4, Math.floor(size * 0.24));
+        const lineWidth = Math.max(2, Math.floor(size * 0.1));
+        const handleLen = Math.max(4, Math.floor(size * 0.26));
+        const angle = Math.PI * 0.25; // 45° = bottom-right
 
-        ctx.fillStyle = '#111827';
+        ctx.strokeStyle = '#111827';
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+
         ctx.beginPath();
-        ctx.arc(leftLensX, lensY, lensRadius, 0, Math.PI * 2);
-        ctx.arc(rightLensX, lensY, lensRadius, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
 
-        ctx.fillStyle = '#1f2937';
-        roundRect(x + (w * 0.28), y + (h * 0.25), w * 0.44, h * 0.2, 3);
-        ctx.fill();
-
-        ctx.fillStyle = '#93c5fd';
-        ctx.globalAlpha = 0.55;
+        const hx = cx + radius * Math.cos(angle);
+        const hy = cy + radius * Math.sin(angle);
         ctx.beginPath();
-        ctx.arc(leftLensX - 1, lensY - 1, lensRadius * 0.45, 0, Math.PI * 2);
-        ctx.arc(rightLensX - 1, lensY - 1, lensRadius * 0.45, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.moveTo(hx, hy);
+        ctx.lineTo(hx + handleLen * Math.cos(angle), hy + handleLen * Math.sin(angle));
+        ctx.stroke();
     };
 
     const drawDecorations = () => {
@@ -686,7 +691,7 @@ if (initialStateElement) {
         drawMug(decors.preferences);
         drawNotepad(decors.notes);
         drawGhostBook(decors.addBook);
-        drawBinoculars(decors.bookshelfSearch);
+        drawSearchIcon(decors.bookshelfSearch);
     };
 
     const drawBookcase = () => {
@@ -790,13 +795,15 @@ if (initialStateElement) {
 
         controlsPanel.classList.toggle('open', controlsOpen);
         notesPanel.classList.toggle('open', notesOpen);
+        searchPanel.classList.toggle('open', searchOpen);
         bookshelfPreferencesPanel.classList.toggle('open', bookshelfPreferencesOpen);
         notesPreferencesPanel.classList.toggle('open', notesPreferencesOpen);
         controlsPanel.setAttribute('aria-hidden', controlsOpen ? 'false' : 'true');
         notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
+        searchPanel.setAttribute('aria-hidden', searchOpen ? 'false' : 'true');
         bookshelfPreferencesPanel.setAttribute('aria-hidden', bookshelfPreferencesOpen ? 'false' : 'true');
         notesPreferencesPanel.setAttribute('aria-hidden', notesPreferencesOpen ? 'false' : 'true');
-        overlayBackdrop.hidden = !(controlsOpen || notesOpen || bookshelfPreferencesOpen || notesPreferencesOpen);
+        overlayBackdrop.hidden = !(controlsOpen || notesOpen || searchOpen || bookshelfPreferencesOpen || notesPreferencesOpen);
 
         if (buttonState.controlsOpen !== controlsOpen) {
             toggleControlsButton.setAttribute('aria-expanded', controlsOpen ? 'true' : 'false');
@@ -1215,9 +1222,8 @@ if (initialStateElement) {
         }
 
         if (hitTest(x, y, decors.bookshelfSearch)) {
-            openPanel('controls');
-            scrollToElementAfterDelay('bookshelf-search-form');
-            focusElementAfterDelay('bookshelf-search-form');
+            openPanel('search');
+            bookshelfSearchForm.querySelector('input[name="query"]').focus();
             return;
         }
 
@@ -1586,6 +1592,18 @@ if (initialStateElement) {
     closeNotesButton.addEventListener('click', () => {
         notesOpen = false;
         syncPanels();
+    });
+
+    toggleSearchButton.addEventListener('click', () => {
+        const willOpen = !searchOpen;
+        openPanel(willOpen ? 'search' : null);
+        if (willOpen) {
+            bookshelfSearchForm.querySelector('input[name="query"]').focus();
+        }
+    });
+
+    closeSearchButton.addEventListener('click', () => {
+        openPanel(null);
     });
 
     openBookshelfPreferencesButton.addEventListener('click', () => {
