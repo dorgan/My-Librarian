@@ -69,17 +69,6 @@
                     <p class="cover-picker-label">Displayed cover</p>
                     <div id="selected-book-cover-picker" class="cover-picker" aria-live="polite"></div>
                 </div>
-                <form id="move-book-form" class="inline-form">
-                    <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
-                    <label>Position <input name="position_index" type="number" min="0" value="0"></label>
-                    <button type="submit">Move</button>
-                </form>
-                <div id="book-rotation-controls" class="metadata-refresh-actions">
-                    <button type="button" data-rotation-mode="upright">Upright</button>
-                    <button type="button" data-rotation-mode="side">Lay on side</button>
-                    <button type="button" data-rotation-mode="tilt_left">Tilt left</button>
-                    <button type="button" data-rotation-mode="tilt_right">Tilt right</button>
-                </div>
                 <button id="remove-book" type="button" class="danger-btn">Remove selected</button>
             </section>
 
