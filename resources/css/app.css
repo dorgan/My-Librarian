@@ -21,28 +21,6 @@ body {
 .app-shell {
     min-height: 100vh;
     padding: 1rem;
-    display: grid;
-    gap: 1rem;
-}
-
-.top-bar {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    padding: 1rem;
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: center;
-}
-
-.top-bar h1 {
-    margin: 0;
-}
-
-.top-bar p {
-    margin: 0.25rem 0 0;
-    color: var(--muted);
 }
 
 .main-layout {
@@ -67,6 +45,10 @@ body {
     border-radius: 0.6rem;
     border: 1px solid #d4c5b2;
     touch-action: manipulation;
+}
+
+.bookcase-panel {
+    display: grid;
 }
 
 .hint {
@@ -144,8 +126,19 @@ button:hover {
     color: #111827;
 }
 
-.toggle-btn {
-    white-space: nowrap;
+.floating-btn {
+    position: fixed;
+    right: 1rem;
+    z-index: 60;
+    box-shadow: 0 8px 18px rgba(17, 24, 39, 0.24);
+}
+
+.floating-btn--notes {
+    bottom: 1rem;
+}
+
+.floating-btn--controls {
+    bottom: 4.25rem;
 }
 
 .danger-btn {
@@ -275,6 +268,28 @@ button:hover {
     margin-top: 0.75rem;
 }
 
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.panel-header h2 {
+    margin: 0;
+}
+
+.panel-close {
+    display: none;
+}
+
+.overlay-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.45);
+    z-index: 40;
+}
+
 .notes-panel {
     transform: translateX(102%);
     opacity: 0;
@@ -339,6 +354,10 @@ button:hover {
         grid-template-columns: 1fr;
     }
 
+    .bookcase-panel {
+        min-height: calc(100vh - 2rem);
+    }
+
     .notes-panel {
         transform: translateY(102%);
     }
@@ -350,12 +369,61 @@ button:hover {
 
 @media (max-width: 640px) {
     .app-shell {
-        padding: 0.5rem;
+        padding: 0;
     }
 
-    .top-bar {
-        flex-direction: column;
-        align-items: stretch;
+    .main-layout {
+        min-height: 100dvh;
+    }
+
+    .bookcase-panel {
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        min-height: 100dvh;
+    }
+
+    .bookcase-panel canvas {
+        border-radius: 0;
+        border-width: 0;
+        height: 100dvh;
+    }
+
+    .controls-panel,
+    .notes-panel {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        border-radius: 0;
+        border: 0;
+        transform: translateY(102%);
+        opacity: 0;
+        pointer-events: none;
+        max-height: 100dvh;
+        overflow: auto;
+        transition: transform 220ms ease, opacity 220ms ease;
+    }
+
+    .controls-panel.open,
+    .notes-panel.open {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .controls-panel h2,
+    .notes-panel h2 {
+        font-size: 1rem;
+    }
+
+    .panel-close {
+        display: inline-flex;
+    }
+
+    .floating-btn {
+        right: 0.75rem;
+        border-radius: 999px;
+        padding-inline: 0.95rem;
     }
 
     .inline-form,
