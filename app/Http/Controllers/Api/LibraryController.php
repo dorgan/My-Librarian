@@ -288,10 +288,12 @@ class LibraryController extends Controller
      */
     private function normalizedCoverIds(array $coverIds): array
     {
-        return array_values(array_unique(array_filter(array_map(
-            fn (mixed $coverId): int => (int) $coverId,
-            $coverIds,
-        ))));
+        return collect($coverIds)
+            ->map(fn (mixed $coverId): int => (int) $coverId)
+            ->filter(fn (int $coverId): bool => $coverId > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**

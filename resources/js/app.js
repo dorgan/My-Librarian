@@ -30,6 +30,20 @@ if (initialStateElement) {
     const coverImages = new Map();
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const safeCoverUrl = (value) => {
+        if (typeof value !== 'string' || !value) {
+            return null;
+        }
+
+        try {
+            const url = new URL(value, window.location.origin);
+            return url.protocol === 'https:' && url.hostname === 'covers.openlibrary.org'
+                ? url.toString()
+                : null;
+        } catch {
+            return null;
+        }
+    };
 
     const fetchJson = async (url, method = 'GET', payload = null) => {
         const response = await fetch(url, {
@@ -120,11 +134,13 @@ if (initialStateElement) {
     };
 
     const imageRecord = (url) => {
-        if (!url) {
+        const safeUrl = safeCoverUrl(url);
+
+        if (!safeUrl) {
             return null;
         }
 
-        const existing = coverImages.get(url);
+        const existing = coverImages.get(safeUrl);
         if (existing) {
             return existing;
         }
@@ -137,8 +153,8 @@ if (initialStateElement) {
         image.onerror = () => {
             record.failed = true;
         };
-        image.src = url;
-        coverImages.set(url, record);
+        image.src = safeUrl;
+        coverImages.set(safeUrl, record);
         return record;
     };
 
@@ -263,7 +279,11 @@ if (initialStateElement) {
             const image = document.createElement('img');
             image.className = 'cover-option-preview';
             image.alt = '';
-            image.src = cover.thumbnailUrl || cover.url;
+            const previewUrl = safeCoverUrl(cover.thumbnailUrl || cover.url);
+            if (!previewUrl) {
+                continue;
+            }
+            image.src = previewUrl;
             button.appendChild(image);
 
             container.appendChild(button);
@@ -300,11 +320,18 @@ if (initialStateElement) {
 
             const preview = result.covers?.[0];
             if (preview) {
+                const previewUrl = safeCoverUrl(preview.thumbnailUrl || preview.url);
+                if (!previewUrl) {
+                    const fallback = document.createElement('div');
+                    fallback.className = 'cover-option-fallback';
+                    card.appendChild(fallback);
+                } else {
                 const image = document.createElement('img');
                 image.className = 'search-result-cover';
                 image.alt = '';
-                image.src = preview.thumbnailUrl || preview.url;
+                image.src = previewUrl;
                 card.appendChild(image);
+                }
             } else {
                 const fallback = document.createElement('div');
                 fallback.className = 'cover-option-fallback';
