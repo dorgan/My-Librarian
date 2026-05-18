@@ -79,6 +79,7 @@ if (initialStateElement) {
     const SPINE_FONT_MAX_ADJUSTMENT = 2;
     const MAX_DECORATION_ICON_SIZE = 13; // px — maximum icon font size inside decoration objects
     const DRAG_MOVEMENT_THRESHOLD = 6;
+    const DEFAULT_ROTATION_MODE = 'upright';
 
     /** Scroll to an element after a short delay to let the panel animate open */
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
@@ -158,9 +159,9 @@ if (initialStateElement) {
     };
 
     const rotationAngle = (mode) => {
-        if (mode === 'side') return Math.PI / 2;
-        if (mode === 'tilt_left') return -(Math.PI / 9);
-        if (mode === 'tilt_right') return Math.PI / 9;
+        if (mode === 'side') return Math.PI / 2; // 90°
+        if (mode === 'tilt_left') return -(Math.PI / 9); // -20°
+        if (mode === 'tilt_right') return Math.PI / 9; // 20°
         return 0;
     };
 
@@ -168,7 +169,7 @@ if (initialStateElement) {
         const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
         const shelf = clamp(book.shelfIndex, 0, shelves - 1);
         const pos = clamp(book.positionIndex, 0, slotCount - 1);
-        const mode = book.rotationMode || 'upright';
+        const mode = book.rotationMode || DEFAULT_ROTATION_MODE;
         const uprightH = Math.max(72, shelfSpacing * 0.82);
         const uprightW = Math.max(24, Math.min(slotWidth * 0.95, 40));
         const shelfTop = padding + (shelfSpacing * (shelf + 1));
@@ -704,7 +705,7 @@ if (initialStateElement) {
         selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
         const buttons = bookRotationControls.querySelectorAll('button[data-rotation-mode]');
         for (const button of buttons) {
-            button.classList.toggle('secondary-btn', button.dataset.rotationMode !== (selected.rotationMode || 'upright'));
+            button.classList.toggle('secondary-btn', button.dataset.rotationMode !== (selected.rotationMode || DEFAULT_ROTATION_MODE));
         }
 
         renderCoverOptions(
@@ -983,7 +984,7 @@ if (initialStateElement) {
         const placement = placementFromPoint(x, y);
         const updated = await fetchJson(`/api/books/${bookId}/position`, 'PATCH', {
             ...placement,
-            rotation_mode: selected.rotationMode || 'upright',
+            rotation_mode: selected.rotationMode || DEFAULT_ROTATION_MODE,
         });
         applyState(updated);
     });
