@@ -1,6 +1,7 @@
 const initialStateElement = document.getElementById('initial-state');
 
 if (initialStateElement) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const state = JSON.parse(initialStateElement.textContent);
     let selectedBookId = null;
@@ -149,9 +150,16 @@ if (initialStateElement) {
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
+                ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
             },
+            credentials: 'same-origin',
             body: payload ? JSON.stringify(payload) : undefined,
         });
+
+        if (response.status === 401 || response.status === 419) {
+            window.location.assign('/login');
+            throw new Error('Authentication required');
+        }
 
         if (!response.ok) {
             throw new Error('Request failed');

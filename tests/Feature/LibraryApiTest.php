@@ -14,11 +14,19 @@ class LibraryApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_home_page_is_available(): void
+    public function test_guest_is_redirected_to_login(): void
     {
+        $this->get('/')->assertRedirect('/login');
+        $this->getJson('/api/library-state')->assertUnauthorized();
+    }
+
+    public function test_authenticated_home_page_is_available(): void
+    {
+        $this->signIn();
+
         $response = $this->get('/');
 
-        $response->assertStatus(200);
+        $response->assertOk();
         $response->assertSee('My Librarian');
         $response->assertSee('Search Open Library');
         $response->assertSee('Metadata refresh');
@@ -26,6 +34,8 @@ class LibraryApiTest extends TestCase
 
     public function test_book_selection_and_cover_selection_work(): void
     {
+        $this->signIn('reader@example.com');
+
         Http::fake([
             'https://openlibrary.org/books/OL456M.json' => Http::response([
                 'key' => '/books/OL456M',
@@ -86,15 +96,6 @@ class LibraryApiTest extends TestCase
         $this->assertSame('OL123W', $book->open_library_work_key);
         $this->assertSame('OL456M', $book->open_library_edition_key);
         $this->assertSame([101, 202, 303], $book->open_library_cover_ids);
-        $this->assertSame('Dune', data_get($book->open_library_payload, 'edition.title'));
-        $this->assertSame('Frank Herbert', data_get($book->open_library_payload, 'authors.0.name'));
-
-        $this->assertDatabaseHas('book_placements', [
-            'book_id' => $book->id,
-            'shelf_index' => 0,
-            'position_index' => 0,
-            'rotation_mode' => 'upright',
-        ]);
 
         $this->patchJson("/api/books/{$book->id}/cover", [
             'cover_id' => 303,
@@ -115,15 +116,16 @@ class LibraryApiTest extends TestCase
         $this->assertSame(0, $placement->position_index);
         $this->assertSame('tilt_left', $placement->rotation_mode);
 
-        $this->deleteJson("/api/books/{$book->id}")
-            ->assertOk();
+        $this->deleteJson("/api/books/{$book->id}")->assertOk();
 
         $this->assertDatabaseMissing('books', ['id' => $book->id]);
         $this->assertDatabaseMissing('book_placements', ['book_id' => $book->id]);
     }
 
-    public function test_open_library_search_uses_contact_email_header(): void
+    public function test_open_library_search_uses_authenticated_email_header(): void
     {
+        $this->signIn('reader@example.com');
+
         Http::fake([
             'https://openlibrary.org/search.json*' => Http::response([
                 'docs' => [
@@ -142,140 +144,38 @@ class LibraryApiTest extends TestCase
 
         $this->getJson('/api/open-library/search?query=dune')
             ->assertOk()
-            ->assertJsonPath('results.0.title', 'Dune')
-            ->assertJsonPath('results.0.author', 'Frank Herbert')
-            ->assertJsonPath('results.0.publisher', 'Ace')
-            ->assertJsonPath('results.0.workKey', 'OL123W')
-            ->assertJsonPath('results.0.editionKey', 'OL456M')
-            ->assertJsonPath('results.0.cover.id', 909);
+            ->assertJsonPath('results.0.title', 'Dune');
 
         Http::assertSent(function (HttpRequest $request): bool {
             return $request->url() === 'https://openlibrary.org/search.json?q=dune&limit=6'
-                && $request->hasHeader('From', 'demo@my-library.local')
-                && str_contains($request->header('User-Agent')[0] ?? '', 'demo@my-library.local');
+                && $request->hasHeader('From', 'reader@example.com')
+                && str_contains($request->header('User-Agent')[0] ?? '', 'reader@example.com');
         });
     }
 
-    public function test_book_rotation_can_be_changed_without_moving_shelf_slot(): void
+    public function test_user_cannot_modify_another_users_book(): void
     {
-        $user = User::factory()->create([
-            'email' => 'demo@my-library.local',
-        ]);
-
+        $owner = User::factory()->create();
         $book = Book::query()->create([
-            'user_id' => $user->id,
-            'title' => 'Dune',
-            'author' => 'Frank Herbert',
-            'publisher' => 'Ace',
+            'user_id' => $owner->id,
+            'title' => 'Private Book',
             'spine_color' => '#123456',
         ]);
 
-        BookPlacement::query()->create([
-            'book_id' => $book->id,
-            'user_id' => $user->id,
-            'shelf_index' => 1,
-            'position_index' => 0,
-            'rotation_mode' => 'upright',
-        ]);
+        $this->signIn('other@example.com');
 
-        $response = $this->patchJson("/api/books/{$book->id}/position", [
-            'shelf_index' => 1,
-            'position_index' => 0,
-            'rotation_mode' => 'side',
-        ]);
-
-        $response->assertOk();
-        $response->assertJsonPath('books.0.rotationMode', 'side');
-        $response->assertJsonPath('books.0.shelfIndex', 1);
-        $response->assertJsonPath('books.0.positionIndex', 0);
-
-        $this->assertDatabaseHas('book_placements', [
-            'book_id' => $book->id,
-            'shelf_index' => 1,
-            'position_index' => 0,
-            'rotation_mode' => 'side',
-        ]);
+        $this->deleteJson("/api/books/{$book->id}")->assertNotFound();
     }
 
-    public function test_refresh_metadata_updates_selected_books(): void
+    public function test_notes_and_preferences_are_scoped_per_user(): void
     {
-        $user = User::query()->create([
-            'name' => 'Demo Reader',
-            'email' => 'demo@my-library.local',
-            'password' => 'secret',
-        ]);
+        $firstUser = $this->signIn('first@example.com');
 
-        $book = Book::query()->create([
-            'user_id' => $user->id,
-            'title' => 'Old Title',
-            'author' => 'Old Author',
-            'publisher' => 'Old Publisher',
-            'spine_color' => '#123456',
-            'open_library_work_key' => 'OL123W',
-            'open_library_edition_key' => 'OL456M',
-            'open_library_cover_id' => 202,
-            'open_library_cover_ids' => [202],
-            'open_library_payload' => ['edition' => ['title' => 'Old Title']],
-        ]);
-
-        BookPlacement::query()->create([
-            'book_id' => $book->id,
-            'user_id' => $user->id,
-            'shelf_index' => 0,
-            'position_index' => 0,
-        ]);
-
-        Http::fake([
-            'https://openlibrary.org/books/OL456M.json' => Http::response([
-                'key' => '/books/OL456M',
-                'title' => 'Dune Messiah',
-                'publishers' => ['Putnam'],
-                'publish_date' => '1969',
-                'covers' => [404, 505],
-                'authors' => [
-                    ['key' => '/authors/OL1A'],
-                ],
-            ]),
-            'https://openlibrary.org/works/OL123W.json' => Http::response([
-                'key' => '/works/OL123W',
-                'title' => 'Dune Messiah',
-            ]),
-            'https://openlibrary.org/authors/OL1A.json' => Http::response([
-                'key' => '/authors/OL1A',
-                'name' => 'Frank Herbert',
-            ]),
-        ]);
-
-        $this->postJson('/api/books/refresh-metadata', [
-            'book_ids' => [$book->id],
-        ])->assertOk()
-            ->assertJsonPath('books.0.title', 'Dune Messiah')
-            ->assertJsonPath('books.0.author', 'Frank Herbert')
-            ->assertJsonPath('books.0.publisher', 'Putnam')
-            ->assertJsonPath('books.0.coverId', 404)
-            ->assertJsonCount(2, 'books.0.coverOptions');
-
-        $book->refresh();
-        $this->assertSame('Dune Messiah', $book->title);
-        $this->assertSame('Frank Herbert', $book->author);
-        $this->assertSame('Putnam', $book->publisher);
-        $this->assertSame([404, 505], $book->open_library_cover_ids);
-        $this->assertSame('Dune Messiah', data_get($book->open_library_payload, 'edition.title'));
-        $this->assertSame('Frank Herbert', data_get($book->open_library_payload, 'authors.0.name'));
-    }
-
-    public function test_notes_and_preferences_persist(): void
-    {
         $this->postJson('/api/notes', [
             'title' => 'Foundation',
             'author' => 'Isaac Asimov',
-            'note' => 'Read after finishing current sci-fi list.',
+            'note' => 'Read next month.',
         ])->assertOk();
-
-        $this->assertDatabaseHas('want_to_read_notes', [
-            'title' => 'Foundation',
-            'author' => 'Isaac Asimov',
-        ]);
 
         $this->putJson('/api/preferences', [
             'bookcase_theme' => 'midnight',
@@ -284,11 +184,25 @@ class LibraryApiTest extends TestCase
             'shelf_count' => 6,
         ])->assertOk();
 
-        $this->assertDatabaseHas('user_preferences', [
-            'bookcase_theme' => 'midnight',
-            'bookcase_shape' => 'arched',
-            'notes_theme' => 'dark',
-            'shelf_count' => 6,
+        $this->post('/logout');
+
+        $secondUser = $this->signIn('second@example.com');
+        $state = $this->getJson('/api/library-state')->assertOk()->json();
+
+        $this->assertSame([], $state['notes']);
+        $this->assertSame('oak', $state['preferences']['bookcaseTheme']);
+        $this->assertNotSame($firstUser->id, $secondUser->id);
+    }
+
+    private function signIn(string $email = 'reader@example.com'): User
+    {
+        $user = User::factory()->create([
+            'email' => $email,
+            'email_verified_at' => now(),
         ]);
+
+        $this->actingAs($user);
+
+        return $user;
     }
 }

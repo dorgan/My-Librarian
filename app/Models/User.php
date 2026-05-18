@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -34,11 +33,16 @@ class User extends Authenticatable
         return $this->hasOne(UserPreference::class);
     }
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    public function magicLoginTokens(): HasMany
+    {
+        return $this->hasMany(MagicLoginToken::class);
+    }
+
+    public function passkeyCredentials(): HasMany
+    {
+        return $this->hasMany(PasskeyCredential::class);
+    }
+
     protected function casts(): array
     {
         return [
