@@ -55,41 +55,18 @@
                     <p class="cover-picker-label">Displayed cover</p>
                     <div id="selected-book-cover-picker" class="cover-picker" aria-live="polite"></div>
                 </div>
-                <form id="move-book-form" class="inline-form">
-                    <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
-                    <label>Position <input name="position_index" type="number" min="0" value="0"></label>
-                    <button type="submit">Move</button>
-                </form>
+                <div id="book-rotation-controls" class="metadata-refresh-actions">
+                    <button type="button" data-rotation-mode="upright">Upright</button>
+                    <button type="button" data-rotation-mode="side">Lay on side</button>
+                    <button type="button" data-rotation-mode="tilt_left">Tilt left</button>
+                    <button type="button" data-rotation-mode="tilt_right">Tilt right</button>
+                </div>
                 <button id="remove-book" type="button" class="danger-btn">Remove selected</button>
             </section>
 
             <section>
-                <h2>Preferences</h2>
-                <form id="preferences-form" class="stacked-form">
-                    <label>Bookcase theme
-                        <select name="bookcase_theme">
-                            <option value="oak">Oak</option>
-                            <option value="walnut">Walnut</option>
-                            <option value="midnight">Midnight</option>
-                        </select>
-                    </label>
-                    <label>Bookcase shape
-                        <select name="bookcase_shape">
-                            <option value="classic">Classic</option>
-                            <option value="minimal">Minimal</option>
-                            <option value="arched">Arched</option>
-                        </select>
-                    </label>
-                    <label>Notes theme
-                        <select name="notes_theme">
-                            <option value="paper">Paper</option>
-                            <option value="mint">Mint</option>
-                            <option value="dark">Dark</option>
-                        </select>
-                    </label>
-                    <label>Shelves <input name="shelf_count" type="number" min="2" max="8" value="4"></label>
-                    <button type="submit">Save preferences</button>
-                </form>
+                <h2>Bookshelf preferences</h2>
+                <button id="open-bookshelf-preferences" type="button">Open bookshelf preferences</button>
             </section>
 
             <section>
@@ -115,9 +92,54 @@
                     <label>Note <textarea name="note" rows="3" maxlength="800"></textarea></label>
                     <button type="submit">Add note</button>
                 </form>
+                <button id="open-notes-preferences" type="button" class="secondary-btn">Notes preferences</button>
                 <ul id="notes-list" class="notes-list" aria-live="polite"></ul>
             </div>
         </section>
+
+        <aside id="bookshelf-preferences-panel" class="controls-panel" aria-label="Bookshelf preferences" aria-hidden="true">
+            <div class="panel-header">
+                <h2>Bookshelf preferences</h2>
+                <button type="button" id="close-bookshelf-preferences" class="panel-close" aria-label="Close bookshelf preferences">Close</button>
+            </div>
+            <form id="bookshelf-preferences-form" class="stacked-form">
+                <label>Bookcase theme
+                    <select name="bookcase_theme">
+                        <option value="oak">Oak</option>
+                        <option value="walnut">Walnut</option>
+                        <option value="midnight">Midnight</option>
+                    </select>
+                </label>
+                <label>Bookcase shape
+                    <select name="bookcase_shape">
+                        <option value="classic">Classic</option>
+                        <option value="minimal">Minimal</option>
+                        <option value="arched">Arched</option>
+                    </select>
+                </label>
+                <label>Shelves <input name="shelf_count" type="number" min="2" max="8" value="4"></label>
+                <button type="submit">Save bookshelf preferences</button>
+            </form>
+        </aside>
+
+        <aside id="notes-preferences-panel" class="notes-panel" aria-label="Notes preferences" aria-hidden="true">
+            <div class="notes-inner">
+                <div class="panel-header">
+                    <h2>Notes preferences</h2>
+                    <button type="button" id="close-notes-preferences" class="panel-close" aria-label="Close notes preferences">Close</button>
+                </div>
+                <form id="notes-preferences-form" class="stacked-form">
+                    <label>Notes theme
+                        <select name="notes_theme">
+                            <option value="paper">Paper</option>
+                            <option value="mint">Mint</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </label>
+                    <button type="submit">Save notes preferences</button>
+                </form>
+            </div>
+        </aside>
     </main>
 
     <div id="overlay-backdrop" class="overlay-backdrop" hidden></div>

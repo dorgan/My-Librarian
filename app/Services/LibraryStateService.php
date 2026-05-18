@@ -89,6 +89,7 @@ class LibraryStateService
             'hasOpenLibraryMetadata' => $payload !== [],
             'shelfIndex' => $book->placement->shelf_index,
             'positionIndex' => $book->placement->position_index,
+            'rotationMode' => $book->placement->rotation_mode ?: 'upright',
         ];
     }
 }

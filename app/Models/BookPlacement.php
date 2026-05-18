@@ -15,6 +15,7 @@ class BookPlacement extends Model
         'user_id',
         'shelf_index',
         'position_index',
+        'rotation_mode',
     ];
 
     public function book(): BelongsTo
