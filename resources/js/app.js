@@ -1035,7 +1035,8 @@ if (initialStateElement) {
                 rotation_mode: selected.rotationMode || DEFAULT_ROTATION_MODE,
             });
             applyState(updated);
-        } catch {
+        } catch (error) {
+            window.console.error('Unable to save book position update.', error);
             ensureAnimatedBooks();
         }
     });

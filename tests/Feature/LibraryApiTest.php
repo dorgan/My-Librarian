@@ -158,10 +158,8 @@ class LibraryApiTest extends TestCase
 
     public function test_book_rotation_can_be_changed_without_moving_shelf_slot(): void
     {
-        $user = User::query()->create([
-            'name' => 'Demo Reader',
+        $user = User::factory()->create([
             'email' => 'demo@my-library.local',
-            'password' => 'secret',
         ]);
 
         $book = Book::query()->create([
