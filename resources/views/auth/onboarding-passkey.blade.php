@@ -3,7 +3,16 @@
 
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#9a6d3d">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="My Librarian">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
     <title>Set up passkey · My Librarian</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
@@ -100,9 +109,12 @@
                         name: passkeyName.value,
                         response: {
                             clientDataJSON: toBase64Url(credential.response.clientDataJSON),
-                            attestationObject: toBase64Url(credential.response.attestationObject),
-                            publicKey: credential.response.getPublicKey ? toBase64Url(credential.response.getPublicKey()) : null,
-                            transports: credential.response.getTransports ? credential.response.getTransports() : ['internal'],
+                            attestationObject: toBase64Url(credential.response
+                                .attestationObject),
+                            publicKey: credential.response.getPublicKey ? toBase64Url(credential
+                                .response.getPublicKey()) : null,
+                            transports: credential.response.getTransports ? credential.response
+                                .getTransports() : ['internal'],
                         },
                     }),
                 });
@@ -114,7 +126,8 @@
                 const payload = await registerResponse.json();
                 window.location.assign(payload.redirect || '/');
             } catch (error) {
-                feedback.textContent = 'Passkey setup failed on this browser. You can skip and continue to your library.';
+                feedback.textContent =
+                    'Passkey setup failed on this browser. You can skip and continue to your library.';
             }
         });
     </script>

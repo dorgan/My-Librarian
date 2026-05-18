@@ -1,3 +1,11 @@
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {
+            // If registration fails, app behavior remains unchanged.
+        });
+    });
+}
+
 const initialStateElement = document.getElementById('initial-state');
 
 if (initialStateElement) {

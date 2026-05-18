@@ -3,7 +3,16 @@
 
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#9a6d3d">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="My Librarian">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
     <title>Sign in · My Librarian</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
@@ -69,7 +78,9 @@
                         'X-CSRF-TOKEN': csrfToken,
                     },
                     credentials: 'same-origin',
-                    body: JSON.stringify({ email: passkeyEmail.value }),
+                    body: JSON.stringify({
+                        email: passkeyEmail.value
+                    }),
                 });
 
                 if (!optionsResponse.ok) {
@@ -106,7 +117,8 @@
                         id: assertion.id,
                         response: {
                             clientDataJSON: toBase64Url(assertion.response.clientDataJSON),
-                            authenticatorData: toBase64Url(assertion.response.authenticatorData),
+                            authenticatorData: toBase64Url(assertion.response
+                                .authenticatorData),
                             signature: toBase64Url(assertion.response.signature),
                         },
                     }),
@@ -119,7 +131,8 @@
                 const payload = await verifyResponse.json();
                 window.location.assign(payload.redirect || '/');
             } catch (error) {
-                passkeyFeedback.textContent = 'Passkey sign-in is unavailable for that account. Use your magic link below.';
+                passkeyFeedback.textContent =
+                    'Passkey sign-in is unavailable for that account. Use your magic link below.';
             }
         });
     </script>

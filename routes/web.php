@@ -11,6 +11,20 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/manifest.webmanifest', function () {
+    return response()->file(
+        public_path('manifest.webmanifest'),
+        ['Content-Type' => 'application/manifest+json']
+    );
+});
+
+Route::get('/sw.js', function () {
+    return response()->file(
+        public_path('sw.js'),
+        ['Content-Type' => 'application/javascript']
+    );
+});
+
 Route::middleware('guest')->group(function (): void {
     Route::get('/register', [RegisterController::class, 'create'])->name('register');
     Route::post('/register', [RegisterController::class, 'store'])->middleware('throttle:6,1')->name('register.store');

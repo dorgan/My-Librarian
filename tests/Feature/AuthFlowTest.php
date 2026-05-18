@@ -13,6 +13,31 @@ class AuthFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_login_page_includes_mobile_install_metadata(): void
+    {
+        $this->get('/login')
+            ->assertOk()
+            ->assertSee('rel="manifest" href="/manifest.webmanifest"', false)
+            ->assertSee('name="apple-mobile-web-app-capable" content="yes"', false)
+            ->assertSee('name="mobile-web-app-capable" content="yes"', false);
+    }
+
+    public function test_manifest_is_publicly_available_for_home_screen_install(): void
+    {
+        $response = $this->get('/manifest.webmanifest');
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            'application/manifest+json',
+            (string) $response->headers->get('content-type')
+        );
+
+        $manifestContents = file_get_contents(public_path('manifest.webmanifest'));
+        $this->assertIsString($manifestContents);
+        $this->assertStringContainsString('"display": "standalone"', $manifestContents);
+        $this->assertStringContainsString('"start_url": "/"', $manifestContents);
+    }
+
     public function test_registration_sends_magic_link_email(): void
     {
         Mail::fake();
