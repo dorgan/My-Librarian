@@ -226,7 +226,7 @@ class OpenLibraryService
         $response = Http::baseUrl('https://openlibrary.org')
             ->acceptJson()
             ->timeout(10)
-            ->withUserAgent(sprintf('My Library/1.0 (%s)', $contactEmail))
+            ->withUserAgent(sprintf('My Librarian/1.0 (%s)', $contactEmail))
             ->withHeaders([
                 'From' => $contactEmail,
             ])

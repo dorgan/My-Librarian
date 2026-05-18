@@ -19,7 +19,7 @@ class LibraryApiTest extends TestCase
         $response = $this->get('/');
 
         $response->assertStatus(200);
-        $response->assertSee('My Library');
+        $response->assertSee('My Librarian');
         $response->assertSee('Search Open Library');
         $response->assertSee('Metadata refresh');
     }
