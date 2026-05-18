@@ -1,0 +1,235 @@
+:root {
+    color-scheme: light;
+    --bg: #f2f4f8;
+    --card: #ffffff;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #d1d5db;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.app-shell {
+    min-height: 100vh;
+    padding: 1rem;
+    display: grid;
+    gap: 1rem;
+}
+
+.top-bar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+}
+
+.top-bar h1 {
+    margin: 0;
+}
+
+.top-bar p {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+}
+
+.main-layout {
+    display: grid;
+    grid-template-columns: 2fr minmax(280px, 1fr) minmax(320px, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.bookcase-panel,
+.controls-panel,
+.notes-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.85rem;
+}
+
+.bookcase-panel canvas {
+    width: 100%;
+    display: block;
+    border-radius: 0.6rem;
+    border: 1px solid #d4c5b2;
+    touch-action: manipulation;
+}
+
+.hint {
+    margin: 0.5rem 0 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.controls-panel {
+    display: grid;
+    gap: 1rem;
+}
+
+.controls-panel h2,
+.notes-panel h2 {
+    margin: 0 0 0.65rem;
+    font-size: 1.05rem;
+}
+
+.stacked-form,
+.inline-form {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.inline-form {
+    grid-template-columns: repeat(2, 1fr) auto;
+    align-items: end;
+}
+
+label {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+}
+
+input,
+textarea,
+select,
+button {
+    font: inherit;
+    border-radius: 0.5rem;
+}
+
+input,
+textarea,
+select {
+    border: 1px solid var(--border);
+    padding: 0.55rem 0.65rem;
+    width: 100%;
+}
+
+button {
+    border: 1px solid #111827;
+    background: #111827;
+    color: #fff;
+    padding: 0.5rem 0.7rem;
+    cursor: pointer;
+}
+
+button:hover {
+    opacity: 0.95;
+}
+
+.toggle-btn {
+    white-space: nowrap;
+}
+
+.danger-btn {
+    background: #b91c1c;
+    border-color: #b91c1c;
+}
+
+#selected-book-label {
+    min-height: 1.25rem;
+    margin-top: 0;
+    color: var(--muted);
+}
+
+.notes-panel {
+    transform: translateX(102%);
+    opacity: 0;
+    transition: transform 220ms ease, opacity 220ms ease;
+    max-height: calc(100vh - 10rem);
+    overflow: hidden;
+}
+
+.notes-panel.open {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.notes-panel .notes-inner {
+    height: 100%;
+    overflow: auto;
+    padding-right: 0.2rem;
+}
+
+.notes-list {
+    list-style: none;
+    margin: 0.8rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.6rem;
+}
+
+.note-item {
+    border: 1px solid var(--border);
+    border-radius: 0.55rem;
+    padding: 0.6rem;
+    display: grid;
+    gap: 0.45rem;
+}
+
+.note-item h3,
+.note-item p {
+    margin: 0;
+}
+
+.note-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.notes-panel[data-theme='mint'] {
+    background: #e8fff6;
+}
+
+.notes-panel[data-theme='dark'] {
+    background: #111827;
+    color: #f9fafb;
+}
+
+.notes-panel[data-theme='dark'] .note-item {
+    border-color: #374151;
+    background: #1f2937;
+}
+
+@media (max-width: 1100px) {
+    .main-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .notes-panel {
+        transform: translateY(102%);
+    }
+
+    .notes-panel.open {
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 640px) {
+    .app-shell {
+        padding: 0.5rem;
+    }
+
+    .top-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .inline-form {
+        grid-template-columns: 1fr;
+    }
+}
