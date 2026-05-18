@@ -1,15 +1,31 @@
 // PWA Install Prompt Handler
 let deferredPrompt;
 
-window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
-    deferredPrompt = event;
-    
-    // Show the install button
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isAndroid = /Android/.test(navigator.userAgent);
+
+function setupPWAInstall() {
     const installSection = document.getElementById('install-section');
     const installButton = document.getElementById('install-button');
     
-    if (installSection && installButton) {
+    if (!installSection || !installButton) return;
+    
+    // On iOS/Safari, show manual instructions
+    if (isIOS) {
+        installSection.innerHTML = `
+            <p style="font-weight: bold; margin-bottom: 0.5rem;">Add to Home Screen</p>
+            <ol style="font-size: 0.875rem; line-height: 1.5; padding-left: 1.25rem;">
+                <li>Tap the Share button (arrow in a box)</li>
+                <li>Scroll down and tap "Add to Home Screen"</li>
+                <li>Tap "Add"</li>
+            </ol>
+        `;
+        installSection.style.display = 'block';
+        return;
+    }
+    
+    // On Android, use the beforeinstallprompt event
+    if (isAndroid && deferredPrompt) {
         installSection.style.display = 'block';
         
         installButton.addEventListener('click', async () => {
@@ -22,9 +38,16 @@ window.addEventListener('beforeinstallprompt', (event) => {
             }
         });
     }
+}
+
+window.addEventListener('beforeinstallprompt', (event) => {
+    if (isAndroid) {
+        event.preventDefault();
+        deferredPrompt = event;
+        setupPWAInstall();
+    }
 });
 
-// Hide install button if app is already installed
 window.addEventListener('appinstalled', () => {
     const installSection = document.getElementById('install-section');
     if (installSection) {
@@ -39,6 +62,9 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {
             // If registration fails, app behavior remains unchanged.
         });
+        
+        // Setup PWA install for iOS or if beforeinstallprompt didn't fire
+        setTimeout(setupPWAInstall, 1000);
     });
 }
 
