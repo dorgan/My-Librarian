@@ -9,7 +9,7 @@ A Laravel + SQLite app for tracking books you have read on an interactive bookca
 - Open Library-powered book search and selection when adding books to the shelf
 - Stored Open Library metadata JSON for each saved book, including cached cover choices
 - Settings controls to refresh metadata for one or more saved books
-- Add/remove books and reposition them directly on the canvas with drag-and-drop
+- Add, remove, and reposition books directly on the canvas with drag-and-drop
 - Rotate books to upright, side, or tilted placements
 - Separate slide-out panels for bookshelf and notes preferences
 - Animated open/close notes panel for want-to-read items
@@ -63,4 +63,4 @@ npm run build
 
 - Add full authentication and per-account multi-user support
 - Add drag-and-drop repositioning directly on canvas
-- Add import/export support
+- Add import/export and cover image support
