@@ -35,6 +35,8 @@ if (initialStateElement) {
     const refreshSelectedBooksButton = document.getElementById('refresh-selected-books');
     const refreshAllBooksButton = document.getElementById('refresh-all-books');
     const removeBookButton = document.getElementById('remove-book');
+    const selectedBookOrientation = document.getElementById('selected-book-orientation');
+    const applyBookOrientationButton = document.getElementById('apply-book-orientation');
     const addNoteForm = document.getElementById('add-note-form');
     const openBookshelfPreferencesButton = document.getElementById('open-bookshelf-preferences');
     const openNotesPreferencesButton = document.getElementById('open-notes-preferences');
@@ -52,6 +54,7 @@ if (initialStateElement) {
         notesOpen: null,
     };
     let dragState = null;
+    let lastBookTap = null;
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const isMobileViewport = () => window.matchMedia('(max-width: 640px)').matches;
@@ -79,6 +82,8 @@ if (initialStateElement) {
     const MAX_DECORATION_ICON_SIZE = 13; // px — maximum icon font size inside decoration objects
     const DRAG_MOVEMENT_THRESHOLD = 6;
     const DEFAULT_ROTATION_MODE = 'upright';
+    const DOUBLE_ACTIVATION_MAX_MS = 350;
+    const DOUBLE_ACTIVATION_MAX_DISTANCE = 24;
 
     /** Scroll to an element after a short delay to let the panel animate open */
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
@@ -696,12 +701,18 @@ if (initialStateElement) {
         if (!selected) {
             selectedBookLabel.textContent = 'No book selected';
             selectedBookMeta.textContent = '';
+            selectedBookOrientation.value = DEFAULT_ROTATION_MODE;
+            selectedBookOrientation.disabled = true;
+            applyBookOrientationButton.disabled = true;
             renderCoverOptions(selectedBookCoverPicker, [], null, () => {}, 'Select a book to swap covers.');
             return;
         }
 
         selectedBookLabel.textContent = `${selected.title}${selected.author ? ` by ${selected.author}` : ''}`;
         selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
+        selectedBookOrientation.value = selected.rotationMode || DEFAULT_ROTATION_MODE;
+        selectedBookOrientation.disabled = false;
+        applyBookOrientationButton.disabled = false;
 
         renderCoverOptions(
             selectedBookCoverPicker,
@@ -893,13 +904,42 @@ if (initialStateElement) {
         if (book) {
             selectedBookId = book.id;
             renderSelectedBook();
+            lastBookTap = null;
             return;
         }
 
         // Click on empty shelf — close panels
         selectedBookId = null;
         renderSelectedBook();
+        lastBookTap = null;
         openPanel(null);
+    };
+
+    const openSelectedBookControls = () => {
+        openPanel('controls');
+        scrollToElementAfterDelay('selected-book-orientation');
+    };
+
+    const handleBookTap = (bookId, x, y, pointerType) => {
+        selectedBookId = bookId;
+        renderSelectedBook();
+
+        const now = Date.now();
+        const isDoubleTap = Boolean(
+            lastBookTap
+            && lastBookTap.bookId === bookId
+            && lastBookTap.pointerType === pointerType
+            && (now - lastBookTap.time) <= DOUBLE_ACTIVATION_MAX_MS
+            && Math.hypot(x - lastBookTap.x, y - lastBookTap.y) <= DOUBLE_ACTIVATION_MAX_DISTANCE,
+        );
+
+        if (isDoubleTap) {
+            lastBookTap = null;
+            openSelectedBookControls();
+            return;
+        }
+
+        lastBookTap = { bookId, x, y, time: now, pointerType };
     };
 
     canvas.addEventListener('pointerdown', (event) => {
@@ -907,6 +947,7 @@ if (initialStateElement) {
         const book = findBookAtPoint(x, y);
         if (!book) {
             dragState = null;
+            lastBookTap = null;
             handleCanvasTap(x, y);
             return;
         }
@@ -960,24 +1001,43 @@ if (initialStateElement) {
 
         const { x, y } = canvasPointFromEvent(event);
         const { bookId, moved } = dragState;
-        dragState = null;
         canvas.releasePointerCapture(event.pointerId);
 
         if (!moved) {
-            selectedBookId = bookId;
-            renderSelectedBook();
+            dragState = null;
+            handleBookTap(bookId, x, y, event.pointerType);
             return;
         }
 
         const selected = state.books.find((book) => book.id === bookId);
         if (!selected) return;
+        lastBookTap = null;
 
         const placement = placementFromPoint(x, y);
-        const updated = await fetchJson(`/api/books/${bookId}/position`, 'PATCH', {
-            ...placement,
-            rotation_mode: selected.rotationMode || DEFAULT_ROTATION_MODE,
-        });
-        applyState(updated);
+        const anim = animatedBooks.get(bookId);
+        if (anim) {
+            const dropTarget = bookTargetRect({
+                ...selected,
+                shelfIndex: placement.shelf_index,
+                positionIndex: placement.position_index,
+            });
+            anim.tx = dropTarget.x;
+            anim.ty = dropTarget.y;
+            anim.tw = dropTarget.w;
+            anim.th = dropTarget.h;
+            anim.ta = dropTarget.a;
+        }
+        dragState = null;
+
+        try {
+            const updated = await fetchJson(`/api/books/${bookId}/position`, 'PATCH', {
+                ...placement,
+                rotation_mode: selected.rotationMode || DEFAULT_ROTATION_MODE,
+            });
+            applyState(updated);
+        } catch {
+            ensureAnimatedBooks();
+        }
     });
 
     bookSearchForm.addEventListener('submit', async (event) => {
@@ -1066,6 +1126,25 @@ if (initialStateElement) {
         if (!selectedBookId) return;
         const updated = await fetchJson(`/api/books/${selectedBookId}`, 'DELETE');
         selectedBookId = null;
+        applyState(updated);
+    });
+
+    applyBookOrientationButton.addEventListener('click', async () => {
+        if (!selectedBookId) {
+            return;
+        }
+
+        const selected = state.books.find((book) => book.id === selectedBookId);
+        if (!selected) {
+            return;
+        }
+
+        const updated = await fetchJson(`/api/books/${selected.id}/position`, 'PATCH', {
+            shelf_index: selected.shelfIndex,
+            position_index: selected.positionIndex,
+            rotation_mode: selectedBookOrientation.value || DEFAULT_ROTATION_MODE,
+        });
+
         applyState(updated);
     });
 
