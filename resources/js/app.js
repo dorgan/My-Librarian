@@ -266,7 +266,13 @@ if (initialStateElement) {
     const renderCoverOptions = (container, covers, selectedCoverId, onSelect, emptyMessage) => {
         container.innerHTML = '';
 
-        const validCovers = (covers || []).filter((cover) => safeCoverUrl(cover.thumbnailUrl || cover.url));
+        const validCovers = (covers || [])
+            .map((cover) => {
+                const previewUrl = safeCoverUrl(cover.thumbnailUrl || cover.url);
+
+                return previewUrl ? { ...cover, previewUrl } : null;
+            })
+            .filter(Boolean);
 
         if (!validCovers.length) {
             const empty = document.createElement('p');
@@ -277,11 +283,6 @@ if (initialStateElement) {
         }
 
         for (const cover of validCovers) {
-            const previewUrl = safeCoverUrl(cover.thumbnailUrl || cover.url);
-            if (!previewUrl) {
-                continue;
-            }
-
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `cover-option${selectedCoverId === cover.id ? ' selected' : ''}`;
@@ -291,7 +292,7 @@ if (initialStateElement) {
             const image = document.createElement('img');
             image.className = 'cover-option-preview';
             image.alt = '';
-            image.src = previewUrl;
+            image.src = cover.previewUrl;
             button.appendChild(image);
             container.appendChild(button);
         }

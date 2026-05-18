@@ -362,7 +362,6 @@ button:hover {
     .inline-form--search,
     .search-result {
         grid-template-columns: 1fr;
-        display: grid;
     }
 
     .metadata-refresh-actions {
