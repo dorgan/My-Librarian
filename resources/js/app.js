@@ -75,7 +75,10 @@ if (initialStateElement) {
     const MIN_SPINE_FONT_SIZE = 7;     // px — legible at minimum spine width
     const MAX_SPINE_FONT_SIZE = 10;    // px — cap so rotated characters fit within the narrow spine
     const SPINE_FONT_PADDING = 3;      // px — safety gap between font size and spine width
+    const SPINE_FONT_MIN_ADJUSTMENT = 1;
+    const SPINE_FONT_MAX_ADJUSTMENT = 2;
     const MAX_DECORATION_ICON_SIZE = 13; // px — maximum icon font size inside decoration objects
+    const DRAG_MOVEMENT_THRESHOLD = 6;
 
     /** Scroll to an element after a short delay to let the panel animate open */
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
@@ -284,7 +287,10 @@ if (initialStateElement) {
         ctx.save();
         ctx.translate(anim.x + anim.w / 2, anim.y + anim.h - 7);
         ctx.rotate(-Math.PI / 2);
-        const fontSize = Math.max(MIN_SPINE_FONT_SIZE + 1, Math.min(MAX_SPINE_FONT_SIZE + 2, anim.w - SPINE_FONT_PADDING));
+        const fontSize = Math.max(
+            MIN_SPINE_FONT_SIZE + SPINE_FONT_MIN_ADJUSTMENT,
+            Math.min(MAX_SPINE_FONT_SIZE + SPINE_FONT_MAX_ADJUSTMENT, anim.w - SPINE_FONT_PADDING),
+        );
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.fillStyle = '#f8fafc';
         ctx.textBaseline = 'middle';
@@ -945,7 +951,8 @@ if (initialStateElement) {
                 dragState = null;
                 return;
             }
-            dragState.moved = dragState.moved || Math.hypot(x - dragState.startX, y - dragState.startY) > 6;
+            dragState.moved = dragState.moved
+                || Math.hypot(x - dragState.startX, y - dragState.startY) > DRAG_MOVEMENT_THRESHOLD;
             if (dragState.moved) {
                 anim.x = x - dragState.offsetX;
                 anim.y = y - dragState.offsetY;
