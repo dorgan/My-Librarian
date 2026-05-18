@@ -175,7 +175,7 @@ if (initialStateElement) {
     };
 
     // Slot layout constants
-    const MIN_SLOT_COUNT = 12;         // minimum slots per shelf to keep spines readable
+    const getMinSlotCount = () => isMobileViewport() ? 6 : 12;
     const DECORATION_SLOT_BUFFER = 4;  // extra slots reserved at the right end for decoration objects
     // Font size is capped by spine WIDTH: after -90° rotation, the character height maps to the spine's
     // narrow dimension, so we limit by anim.w rather than anim.h.
@@ -306,8 +306,8 @@ if (initialStateElement) {
         const padding = 28;
         const shelfSpacing = (canvas.height - (padding * 2)) / shelves;
         const maxPosition = state.books.reduce((largest, book) => Math.max(largest, Number(book.positionIndex) || 0), 0);
-        // MIN_SLOT_COUNT keeps spines readable; DECORATION_SLOT_BUFFER reserves end slots for objects
-        const slotCount = Math.max(MIN_SLOT_COUNT, maxPosition + DECORATION_SLOT_BUFFER);
+        // getMinSlotCount() adapts to narrow screens; DECORATION_SLOT_BUFFER reserves end slots for objects
+        const slotCount = Math.max(getMinSlotCount(), maxPosition + DECORATION_SLOT_BUFFER);
         const slotWidth = (canvas.width - (padding * 2)) / slotCount;
         return { shelves, slotCount, padding, shelfSpacing, slotWidth };
     };
@@ -540,8 +540,9 @@ if (initialStateElement) {
     // ── Bookshelf decoration rects (preferences mug, notes notepad, add-book ghost) ──
     const getDecorationRects = () => {
         const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
-        const h = Math.max(72, shelfSpacing * 0.82);
-        const w = Math.max(20, Math.min(slotWidth * 0.80, 32));
+        const h = Math.max(80, shelfSpacing * 0.85);
+        const minWidth = isMobileViewport() ? Math.max(45, slotWidth * 0.75) : 50;
+        const w = Math.max(minWidth, Math.min(slotWidth * 0.90, 100));
         const slotX = (pos) => padding + slotWidth * pos + (slotWidth - w) / 2;
         const slotY = (shelf) => padding + shelfSpacing * shelf + (shelfSpacing - h - 10);
 
@@ -572,11 +573,18 @@ if (initialStateElement) {
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Handle arc
+        // Handle arc — scale extension based on available width
         ctx.strokeStyle = '#e8d5b5';
         ctx.lineWidth = 3;
+        const handleExtension = Math.max(2, w * 0.12);
+        const maxHandleX = bx + bw + handleExtension;
+        const handleRadius = bh * 0.28;
+        const canvasPadding = 28;
+        const rightEdgePadding = 20;
+        const strokeMargin = 2;
+        const clampedHandleX = Math.min(maxHandleX, canvas.width - canvasPadding - rightEdgePadding - strokeMargin);
         ctx.beginPath();
-        ctx.arc(bx + bw + 5, by + bh * 0.48, bh * 0.28, -Math.PI * 0.5, Math.PI * 0.5);
+        ctx.arc(clampedHandleX, by + bh * 0.48, handleRadius, -Math.PI * 0.5, Math.PI * 0.5);
         ctx.stroke();
 
         // Steam wisps
@@ -973,6 +981,9 @@ if (initialStateElement) {
                 syncAddBookForm();
                 renderSearchResults();
                 bookSearchFeedback.textContent = 'Loading full Open Library metadata and cover choices…';
+
+                // Scroll to the Add read book form to show the "Add to bookcase" button
+                scrollToElementAfterDelay('add-book-form', 200);
 
                 try {
                     const selection = await fetchJson(`/api/open-library/selection?work_key=${encodeURIComponent(result.workKey ?? '')}&edition_key=${encodeURIComponent(result.editionKey ?? '')}`);
@@ -1457,6 +1468,10 @@ if (initialStateElement) {
         bookSearchResults.innerHTML = '';
         bookSearchFeedback.textContent = 'Search Open Library to select the next book you want to add.';
         syncAddBookForm();
+        
+        // Close the controls panel so the user can see the newly added book
+        controlsOpen = false;
+        syncPanels();
     });
 
     refreshSelectedBooksButton.addEventListener('click', async () => {
@@ -1491,6 +1506,10 @@ if (initialStateElement) {
         const updated = await fetchJson(`/api/books/${selectedBookId}`, 'DELETE');
         selectedBookId = null;
         applyState(updated);
+        
+        // Close the controls panel so the user can see the updated bookshelf
+        controlsOpen = false;
+        syncPanels();
     });
 
     applyBookOrientationButton.addEventListener('click', async () => {
