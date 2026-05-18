@@ -180,10 +180,13 @@ if (initialStateElement) {
         const angle = rotationAngle(mode);
 
         if (mode === 'side') {
-            const h = Math.max(18, Math.min(shelfSpacing * 0.28, 32));
-            const w = Math.max(58, Math.min(slotWidth * 1.9, 86));
-            const x = padding + (slotWidth * pos) + (slotWidth - w) / 2;
-            const y = shelfTop - h - 7;
+            const w = uprightW;
+            const h = uprightH;
+            const sideDisplayHeight = uprightW;
+            const centerX = padding + (slotWidth * pos) + (slotWidth / 2);
+            const centerY = shelfTop - 7 - (sideDisplayHeight / 2);
+            const x = centerX - (w / 2);
+            const y = centerY - (h / 2);
             return { x, y, w, h, a: angle };
         }
 
