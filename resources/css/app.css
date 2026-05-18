@@ -360,9 +360,12 @@ button:hover {
 
     .inline-form,
     .inline-form--search,
-    .search-result,
-    .metadata-refresh-actions {
+    .search-result {
         grid-template-columns: 1fr;
         display: grid;
+    }
+
+    .metadata-refresh-actions {
+        flex-direction: column;
     }
 }
