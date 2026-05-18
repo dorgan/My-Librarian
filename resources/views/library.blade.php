@@ -10,23 +10,16 @@
 </head>
 <body>
 <div class="app-shell">
-    <header class="top-bar">
-        <div>
-            <h1>My Library</h1>
-            <p>Track books you have read and books you want to read.</p>
-        </div>
-        <button id="toggle-notes" type="button" class="toggle-btn" aria-controls="notes-panel" aria-expanded="false">
-            Open notes
-        </button>
-    </header>
-
     <main class="main-layout">
         <section class="bookcase-panel" aria-label="Bookcase">
             <canvas id="bookcase-canvas" aria-label="Interactive bookcase" role="img"></canvas>
-            <p class="hint">Search Open Library, select the book you want to add, then use stored metadata to swap covers or refresh details later.</p>
         </section>
 
-        <aside class="controls-panel" aria-label="Book and preference controls">
+        <aside id="controls-panel" class="controls-panel" aria-label="Book and preference controls" aria-hidden="true">
+            <div class="panel-header">
+                <h2>Library controls</h2>
+                <button type="button" id="close-controls" class="panel-close" aria-label="Close controls">Close</button>
+            </div>
             <section>
                 <h2>Search Open Library</h2>
                 <form id="book-search-form" class="inline-form inline-form--search">
@@ -112,7 +105,10 @@
 
         <section id="notes-panel" class="notes-panel" aria-label="Want to read notes" aria-hidden="true">
             <div class="notes-inner">
-                <h2>Want to read notes</h2>
+                <div class="panel-header">
+                    <h2>Want to read notes</h2>
+                    <button type="button" id="close-notes" class="panel-close" aria-label="Close notes">Close</button>
+                </div>
                 <form id="add-note-form" class="stacked-form">
                     <label>Title <input name="title" required maxlength="180"></label>
                     <label>Author <input name="author" maxlength="180"></label>
@@ -123,6 +119,14 @@
             </div>
         </section>
     </main>
+
+    <div id="overlay-backdrop" class="overlay-backdrop" hidden></div>
+    <button id="toggle-controls" type="button" class="floating-btn floating-btn--controls" aria-controls="controls-panel" aria-expanded="false" aria-label="Open controls panel">
+        Controls
+    </button>
+    <button id="toggle-notes" type="button" class="floating-btn floating-btn--notes" aria-controls="notes-panel" aria-expanded="false" aria-label="Open notes panel">
+        Notes
+    </button>
 </div>
 
 <script id="initial-state" type="application/json">@json($initialState)</script>

@@ -5,14 +5,20 @@ if (initialStateElement) {
     const state = JSON.parse(initialStateElement.textContent);
     let selectedBookId = null;
     let notesOpen = false;
+    let controlsOpen = false;
     let searchResults = [];
     let addBookSelection = null;
     const refreshSelection = new Set();
 
     const canvas = document.getElementById('bookcase-canvas');
     const ctx = canvas.getContext('2d');
+    const toggleControlsButton = document.getElementById('toggle-controls');
     const toggleNotesButton = document.getElementById('toggle-notes');
+    const controlsPanel = document.getElementById('controls-panel');
     const notesPanel = document.getElementById('notes-panel');
+    const closeControlsButton = document.getElementById('close-controls');
+    const closeNotesButton = document.getElementById('close-notes');
+    const overlayBackdrop = document.getElementById('overlay-backdrop');
     const selectedBookLabel = document.getElementById('selected-book-label');
     const selectedBookMeta = document.getElementById('selected-book-meta');
     const selectedBookCoverPicker = document.getElementById('selected-book-cover-picker');
@@ -33,8 +39,13 @@ if (initialStateElement) {
 
     const animatedBooks = new Map();
     const coverImages = new Map();
+    const buttonState = {
+        controlsOpen: null,
+        notesOpen: null,
+    };
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const isMobileViewport = () => window.matchMedia('(max-width: 640px)').matches;
     const safeCoverUrl = (value) => {
         if (typeof value !== 'string' || !value) {
             return null;
@@ -259,8 +270,44 @@ if (initialStateElement) {
     const setCanvasSize = () => {
         const bounds = canvas.parentElement.getBoundingClientRect();
         canvas.width = Math.max(320, Math.floor(bounds.width));
-        canvas.height = Math.max(340, Math.floor(window.innerHeight * 0.68));
+        canvas.height = isMobileViewport()
+            ? Math.max(340, Math.floor(window.innerHeight))
+            : Math.max(340, Math.floor(window.innerHeight * 0.68));
         ensureAnimatedBooks();
+    };
+
+    const syncPanels = () => {
+        const mobile = isMobileViewport();
+        toggleControlsButton.hidden = !mobile;
+
+        if (mobile) {
+            controlsPanel.classList.toggle('open', controlsOpen);
+            notesPanel.classList.toggle('open', notesOpen);
+            controlsPanel.setAttribute('aria-hidden', controlsOpen ? 'false' : 'true');
+            notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
+            overlayBackdrop.hidden = !(controlsOpen || notesOpen);
+        } else {
+            controlsOpen = false;
+            controlsPanel.classList.remove('open');
+            controlsPanel.setAttribute('aria-hidden', 'false');
+            notesPanel.classList.toggle('open', notesOpen);
+            notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
+            overlayBackdrop.hidden = true;
+        }
+
+        if (buttonState.controlsOpen !== controlsOpen) {
+            toggleControlsButton.setAttribute('aria-expanded', controlsOpen ? 'true' : 'false');
+            toggleControlsButton.setAttribute('aria-label', controlsOpen ? 'Close controls panel' : 'Open controls panel');
+            toggleControlsButton.textContent = controlsOpen ? 'Close controls' : 'Open controls';
+            buttonState.controlsOpen = controlsOpen;
+        }
+
+        if (buttonState.notesOpen !== notesOpen) {
+            toggleNotesButton.setAttribute('aria-expanded', notesOpen ? 'true' : 'false');
+            toggleNotesButton.setAttribute('aria-label', notesOpen ? 'Close notes panel' : 'Open notes panel');
+            toggleNotesButton.textContent = notesOpen ? 'Close notes' : 'Open notes';
+            buttonState.notesOpen = notesOpen;
+        }
     };
 
     const renderCoverOptions = (container, covers, selectedCoverId, onSelect, emptyMessage) => {
@@ -710,18 +757,52 @@ if (initialStateElement) {
         setCanvasSize();
     });
 
-    toggleNotesButton.addEventListener('click', () => {
-        notesOpen = !notesOpen;
-        notesPanel.classList.toggle('open', notesOpen);
-        notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
-        toggleNotesButton.setAttribute('aria-expanded', notesOpen ? 'true' : 'false');
-        toggleNotesButton.textContent = notesOpen ? 'Close notes' : 'Open notes';
+    toggleControlsButton.addEventListener('click', () => {
+        const mobile = isMobileViewport();
+        controlsOpen = !controlsOpen;
+
+        if (mobile && controlsOpen) {
+            notesOpen = false;
+        }
+
+        syncPanels();
     });
 
-    window.addEventListener('resize', setCanvasSize);
+    toggleNotesButton.addEventListener('click', () => {
+        const mobile = isMobileViewport();
+        notesOpen = !notesOpen;
+
+        if (mobile && notesOpen) {
+            controlsOpen = false;
+        }
+
+        syncPanels();
+    });
+
+    closeControlsButton.addEventListener('click', () => {
+        controlsOpen = false;
+        syncPanels();
+    });
+
+    closeNotesButton.addEventListener('click', () => {
+        notesOpen = false;
+        syncPanels();
+    });
+
+    overlayBackdrop.addEventListener('click', () => {
+        controlsOpen = false;
+        notesOpen = false;
+        syncPanels();
+    });
+
+    window.addEventListener('resize', () => {
+        setCanvasSize();
+        syncPanels();
+    });
 
     syncAddBookForm();
     applyState(state);
     setCanvasSize();
+    syncPanels();
     requestAnimationFrame(drawBookcase);
 }
