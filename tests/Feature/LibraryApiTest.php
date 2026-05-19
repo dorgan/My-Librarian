@@ -228,6 +228,43 @@ class LibraryApiTest extends TestCase
             ->assertJsonValidationErrors(['query']);
     }
 
+    public function test_store_book_auto_places_to_next_shelf_when_current_shelf_is_full(): void
+    {
+        $user = $this->signIn('reader@example.com');
+
+        for ($index = 0; $index < 4; $index++) {
+            $existingBook = Book::query()->create([
+                'user_id' => $user->id,
+                'title' => 'Existing '.$index,
+                'spine_color' => '#6f4e37',
+            ]);
+
+            BookPlacement::query()->create([
+                'book_id' => $existingBook->id,
+                'user_id' => $user->id,
+                'shelf_index' => 0,
+                'position_index' => $index,
+                'rotation_mode' => 'upright',
+            ]);
+        }
+
+        $response = $this->postJson('/api/books', [
+            'title' => 'Auto placed',
+            'author' => 'Test Author',
+            'spine_color' => '#334455',
+        ])->assertOk();
+
+        $newBook = Book::query()->where('title', 'Auto placed')->firstOrFail();
+        $placement = BookPlacement::query()->where('book_id', $newBook->id)->firstOrFail();
+
+        $this->assertSame(1, (int) $placement->shelf_index);
+        $this->assertSame(0, (int) $placement->position_index);
+
+        $response->assertJsonPath('books.4.id', $newBook->id);
+        $response->assertJsonPath('books.4.shelfIndex', 1);
+        $response->assertJsonPath('books.4.positionIndex', 0);
+    }
+
     public function test_user_cannot_modify_another_users_book(): void
     {
         $owner = User::factory()->create();

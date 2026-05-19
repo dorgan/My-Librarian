@@ -2304,8 +2304,6 @@ if (initialStateElement) {
             author: addBookForm.author.value.trim(),
             publisher: addBookForm.publisher.value.trim(),
             spine_color: addBookForm.spine_color.value,
-            shelf_index: Number(addBookForm.shelf_index.value),
-            position_index: Number(addBookForm.position_index.value),
         };
 
         if (!payload.title) return;
@@ -2317,19 +2315,23 @@ if (initialStateElement) {
             payload.open_library_payload = addBookSelection.payload;
         }
 
-        const updated = await fetchJson('/api/books', 'POST', payload);
-        applyState(updated);
-        addBookForm.reset();
-        addBookForm.spine_color.value = '#6f4e37';
-        addBookSelection = null;
-        searchResults = [];
-        bookSearchResults.innerHTML = '';
-        bookSearchFeedback.textContent = 'Search Open Library to select the next book you want to add.';
-        syncAddBookForm();
-        
-        // Close the controls panel so the user can see the newly added book
-        controlsOpen = false;
-        syncPanels();
+        try {
+            const updated = await fetchJson('/api/books', 'POST', payload);
+            applyState(updated);
+            addBookForm.reset();
+            addBookForm.spine_color.value = '#6f4e37';
+            addBookSelection = null;
+            searchResults = [];
+            bookSearchResults.innerHTML = '';
+            bookSearchFeedback.textContent = 'Search Open Library to select the next book you want to add.';
+            syncAddBookForm();
+
+            // Close the controls panel so the user can see the newly added book
+            controlsOpen = false;
+            syncPanels();
+        } catch {
+            bookSearchFeedback.textContent = 'Book could not be added right now. Please try again.';
+        }
     });
 
     refreshSelectedBooksButton.addEventListener('click', async () => {

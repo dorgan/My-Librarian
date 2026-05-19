@@ -25,6 +25,10 @@ class LibraryController extends Controller
 
     private const MAX_SHELF_POSITION = 250;
 
+    private const AUTO_TOP_SHELF_CAPACITY = 4;
+
+    private const AUTO_OTHER_SHELF_CAPACITY = 6;
+
     public function __construct(
         private readonly LibraryStateService $libraryState,
         private readonly OpenLibraryService $openLibrary,
@@ -150,10 +154,19 @@ class LibraryController extends Controller
             $this->bookAttributes($data, $payload),
         ));
 
+        $targetShelf = $data['shelf_index'] ?? null;
+        $targetPosition = $data['position_index'] ?? null;
+
+        if (! is_int($targetShelf) && ! is_int($targetPosition)) {
+            $placement = $this->nextAutoBookPlacement($user->id);
+            $targetShelf = $placement['shelf_index'];
+            $targetPosition = $placement['position_index'];
+        }
+
         $this->placeBook(
             $book,
-            (int) ($data['shelf_index'] ?? 0),
-            (int) ($data['position_index'] ?? PHP_INT_MAX),
+            is_int($targetShelf) ? $targetShelf : 0,
+            is_int($targetPosition) ? $targetPosition : PHP_INT_MAX,
             $data['rotation_mode'] ?? null,
         );
 
@@ -600,6 +613,48 @@ class LibraryController extends Controller
         }
 
         return min(((int) $lastPosition) + 1, self::MAX_SHELF_POSITION);
+    }
+
+    /**
+     * @return array{shelf_index:int, position_index:int}
+     */
+    private function nextAutoBookPlacement(int $userId): array
+    {
+        $preferences = UserPreference::query()->firstOrCreate(
+            ['user_id' => $userId],
+            [
+                'bookcase_theme' => 'oak',
+                'bookcase_shape' => 'classic',
+                'notes_theme' => 'paper',
+                'shelf_count' => 4,
+            ],
+        );
+
+        $shelfCount = max(2, min(8, (int) $preferences->shelf_count));
+        $itemCounts = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->selectRaw('shelf_index, COUNT(*) as total')
+            ->groupBy('shelf_index')
+            ->pluck('total', 'shelf_index');
+
+        for ($shelfIndex = 0; $shelfIndex < $shelfCount; $shelfIndex++) {
+            $countOnShelf = (int) ($itemCounts[$shelfIndex] ?? 0);
+            $capacity = $shelfIndex === 0 ? self::AUTO_TOP_SHELF_CAPACITY : self::AUTO_OTHER_SHELF_CAPACITY;
+
+            if ($countOnShelf < $capacity) {
+                return [
+                    'shelf_index' => $shelfIndex,
+                    'position_index' => $this->nextShelfTailPosition($userId, $shelfIndex),
+                ];
+            }
+        }
+
+        $lastShelf = $shelfCount - 1;
+
+        return [
+            'shelf_index' => $lastShelf,
+            'position_index' => $this->nextShelfTailPosition($userId, $lastShelf),
+        ];
     }
 
     private function nextLegacyDividerPosition(int $userId, int $shelfIndex): int

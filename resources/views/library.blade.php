@@ -127,9 +127,8 @@
                         <p class="cover-picker-label">Saved cover choices</p>
                         <div id="add-book-cover-picker" class="cover-picker" aria-live="polite"></div>
                     </div>
-                    <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
-                    <label>Position <input name="position_index" type="number" min="0"
-                            value="0"></label>
+                    <p class="hint">Books are auto-placed at the end of the current shelf, then continue on the next
+                        shelf when needed.</p>
                     <button type="submit">Add to bookcase</button>
                 </form>
             </section>
