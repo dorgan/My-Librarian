@@ -481,6 +481,10 @@ if (initialStateElement) {
         .some((candidate) => candidate.positionIndex > book.positionIndex);
 
     const syncOrientationControlState = (selectedBook) => {
+        if (!selectedBookOrientation) {
+            return;
+        }
+
         const tiltRightOption = selectedBookOrientation.querySelector('option[value="tilt_right"]');
         if (!tiltRightOption) {
             return;
@@ -1597,10 +1601,14 @@ if (initialStateElement) {
         if (!selected) {
             selectedBookLabel.textContent = 'No book selected';
             selectedBookMeta.textContent = '';
-            selectedBookOrientation.value = DEFAULT_ROTATION_MODE;
-            selectedBookOrientation.disabled = true;
+            if (selectedBookOrientation) {
+                selectedBookOrientation.value = DEFAULT_ROTATION_MODE;
+                selectedBookOrientation.disabled = true;
+            }
             syncOrientationControlState(null);
-            applyBookOrientationButton.disabled = true;
+            if (applyBookOrientationButton) {
+                applyBookOrientationButton.disabled = true;
+            }
             renderCoverOptions(selectedBookCoverPicker, [], null, () => {}, 'Select a book to swap covers.');
             selectedBookSection.style.display = 'none';
             return;
@@ -1609,10 +1617,14 @@ if (initialStateElement) {
         selectedBookSection.style.display = 'block';
         selectedBookLabel.textContent = `${selected.title}${selected.author ? ` by ${selected.author}` : ''}`;
         selectedBookMeta.textContent = [selected.publisher, selected.publishYear].filter(Boolean).join(' • ') || 'Stored Open Library details unavailable';
-        selectedBookOrientation.value = selected.rotationMode || DEFAULT_ROTATION_MODE;
-        selectedBookOrientation.disabled = false;
+        if (selectedBookOrientation) {
+            selectedBookOrientation.value = selected.rotationMode || DEFAULT_ROTATION_MODE;
+            selectedBookOrientation.disabled = false;
+        }
         syncOrientationControlState(selected);
-        applyBookOrientationButton.disabled = false;
+        if (applyBookOrientationButton) {
+            applyBookOrientationButton.disabled = false;
+        }
 
         renderCoverOptions(
             selectedBookCoverPicker,
@@ -2319,33 +2331,37 @@ if (initialStateElement) {
         syncPanels();
     });
 
-    applyBookOrientationButton.addEventListener('click', async () => {
-        if (!selectedBookId) {
-            return;
-        }
+    if (applyBookOrientationButton) {
+        applyBookOrientationButton.addEventListener('click', async () => {
+            if (!selectedBookId || !selectedBookOrientation) {
+                return;
+            }
 
-        const selected = state.books.find((book) => book.id === selectedBookId);
-        if (!selected) {
-            return;
-        }
+            const selected = state.books.find((book) => book.id === selectedBookId);
+            if (!selected) {
+                return;
+            }
 
-        const updated = await fetchJson(`/api/books/${selected.id}/position`, 'PATCH', {
-            shelf_index: selected.shelfIndex,
-            position_index: selected.positionIndex,
-            rotation_mode: selectedBookOrientation.value || DEFAULT_ROTATION_MODE,
+            const updated = await fetchJson(`/api/books/${selected.id}/position`, 'PATCH', {
+                shelf_index: selected.shelfIndex,
+                position_index: selected.positionIndex,
+                rotation_mode: selectedBookOrientation.value || DEFAULT_ROTATION_MODE,
+            });
+
+            applyState(updated);
         });
+    }
 
-        applyState(updated);
-    });
+    if (selectedBookOrientation) {
+        selectedBookOrientation.addEventListener('change', () => {
+            const selected = state.books.find((book) => book.id === selectedBookId);
+            if (!selected) {
+                return;
+            }
 
-    selectedBookOrientation.addEventListener('change', () => {
-        const selected = state.books.find((book) => book.id === selectedBookId);
-        if (!selected) {
-            return;
-        }
-
-        syncOrientationControlState(selected);
-    });
+            syncOrientationControlState(selected);
+        });
+    }
 
     addShelfDividerForm.addEventListener('submit', async (event) => {
         event.preventDefault();

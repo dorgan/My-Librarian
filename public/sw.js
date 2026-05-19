@@ -1,5 +1,5 @@
 const CACHE_NAME = 'my-librarian-shell-v2';
-const APP_SHELL = ['/', '/manifest.webmanifest'];
+const APP_SHELL = ['/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -40,8 +40,7 @@ self.addEventListener('fetch', (event) => {
                     return cachedResponse;
                 }
 
-                const fallback = await caches.match('/');
-                return fallback || Response.error();
+                return Response.error();
             }
         })());
         return;
