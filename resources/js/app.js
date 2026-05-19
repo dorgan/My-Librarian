@@ -558,9 +558,11 @@ if (initialStateElement) {
     // ── Bookshelf decoration rects (preferences mug, notes notepad, add-book ghost) ──
     const getDecorationRects = () => {
         const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
-        const h = Math.max(80, shelfSpacing * 0.85);
-        const minWidth = isMobileViewport() ? Math.max(45, slotWidth * 0.75) : 50;
-        const w = Math.max(minWidth, Math.min(slotWidth * 0.90, 100));
+        const mobile = isMobileViewport();
+        // Keep decoration objects from becoming tall/narrow on very tall mobile viewports.
+        const h = clamp(shelfSpacing * (mobile ? 0.62 : 0.76), mobile ? 74 : 86, mobile ? 136 : 180);
+        const preferredWidth = Math.max(slotWidth * (mobile ? 1.05 : 0.90), h * (mobile ? 0.50 : 0.42));
+        const w = clamp(preferredWidth, mobile ? 60 : 50, mobile ? 96 : 108);
         const slotX = (pos) => padding + slotWidth * pos + (slotWidth - w) / 2;
         const slotY = (shelf) => padding + shelfSpacing * shelf + (shelfSpacing - h - 10);
 
@@ -576,8 +578,13 @@ if (initialStateElement) {
         };
     };
 
-    const hitTest = (x, y, rect) =>
-        x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+    const hitTest = (x, y, rect, padding = 0) =>
+        x >= rect.x - padding
+        && x <= rect.x + rect.w + padding
+        && y >= rect.y - padding
+        && y <= rect.y + rect.h + padding;
+
+    const decorationHitTest = (x, y, rect) => hitTest(x, y, rect, isMobileViewport() ? 10 : 4);
 
     const drawMug = (rect) => {
         const { x, y, w, h } = rect;
@@ -1356,25 +1363,25 @@ if (initialStateElement) {
     const handleCanvasTap = (x, y) => {
         const decors = getDecorationRects();
 
-        if (hitTest(x, y, decors.preferences)) {
+        if (decorationHitTest(x, y, decors.preferences)) {
             openPanel('bookshelfPreferences');
             scrollToElementAfterDelay('bookshelf-preferences-form');
             return;
         }
 
-        if (hitTest(x, y, decors.notes)) {
+        if (decorationHitTest(x, y, decors.notes)) {
             openPanel('notes');
             return;
         }
 
-        if (hitTest(x, y, decors.addBook)) {
+        if (decorationHitTest(x, y, decors.addBook)) {
             openPanel('controls');
             scrollToElementAfterDelay('book-search-form');
             focusElementAfterDelay('book-search-form');
             return;
         }
 
-        if (hitTest(x, y, decors.bookshelfSearch)) {
+        if (decorationHitTest(x, y, decors.bookshelfSearch)) {
             openPanel('search');
             bookshelfSearchForm.querySelector('input[name="query"]').focus();
             return;
@@ -1488,10 +1495,10 @@ if (initialStateElement) {
         }
 
         const decors = getDecorationRects();
-        const overDecor = hitTest(x, y, decors.preferences)
-            || hitTest(x, y, decors.notes)
-            || hitTest(x, y, decors.addBook)
-            || hitTest(x, y, decors.bookshelfSearch);
+        const overDecor = decorationHitTest(x, y, decors.preferences)
+            || decorationHitTest(x, y, decors.notes)
+            || decorationHitTest(x, y, decors.addBook)
+            || decorationHitTest(x, y, decors.bookshelfSearch);
         canvas.style.cursor = (overDecor || findBookAtPoint(x, y) !== null || findDividerAtPoint(x, y) !== null) ? 'pointer' : 'default';
     });
 
