@@ -15,8 +15,39 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
     <title>My Librarian</title>
-    @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
+    @php
+        $hotFile = public_path('hot');
+        $manifestPath = public_path('build/manifest.json');
+        $requestHost = request()->getHost();
+        $useHotVite = false;
+
+        if (file_exists($hotFile)) {
+            $hotUrl = trim((string) file_get_contents($hotFile));
+            $hotHost = parse_url($hotUrl, PHP_URL_HOST);
+            $useHotVite = is_string($hotHost) && strcasecmp($hotHost, $requestHost) === 0;
+        }
+
+        $manifest = file_exists($manifestPath) ? json_decode((string) file_get_contents($manifestPath), true) : null;
+
+        $cssEntry = is_array($manifest) ? $manifest['resources/css/app.css'] ?? null : null;
+        $jsEntry = is_array($manifest) ? $manifest['resources/js/app.js'] ?? null : null;
+    @endphp
+
+    @if ($useHotVite)
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @elseif (is_array($cssEntry) && isset($cssEntry['file']) && is_string($cssEntry['file']))
+        <link rel="stylesheet" href="{{ asset('build/' . $cssEntry['file']) }}">
+    @endif
+
+    @if (!$useHotVite && is_array($jsEntry) && isset($jsEntry['file']) && is_string($jsEntry['file']))
+        @if (isset($jsEntry['css']) && is_array($jsEntry['css']))
+            @foreach ($jsEntry['css'] as $cssFile)
+                @if (is_string($cssFile))
+                    <link rel="stylesheet" href="{{ asset('build/' . $cssFile) }}">
+                @endif
+            @endforeach
+        @endif
+        <script type="module" src="{{ asset('build/' . $jsEntry['file']) }}"></script>
     @endif
 </head>
 
