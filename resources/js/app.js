@@ -660,15 +660,52 @@ if (initialStateElement) {
         const slotX = (pos) => padding + slotWidth * pos + (slotWidth - w) / 2;
         const slotY = (shelf) => padding + shelfSpacing * shelf + (shelfSpacing - h - 10);
 
+        const shelfOccupiedRightEdge = (shelfIndex) => {
+            let rightEdge = padding;
+
+            for (const book of state.books) {
+                if (book.shelfIndex !== shelfIndex) {
+                    continue;
+                }
+
+                const anim = animatedBooks.get(book.id);
+                const rect = anim || bookTargetRect(book);
+                rightEdge = Math.max(rightEdge, rect.x + rect.w);
+            }
+
+            for (const divider of state.shelfDividers || []) {
+                if (divider.shelfIndex !== shelfIndex) {
+                    continue;
+                }
+
+                const rect = dividerRect(divider);
+                rightEdge = Math.max(rightEdge, rect.x + rect.w);
+            }
+
+            return rightEdge;
+        };
+
+        const decorationGap = mobile ? 10 : 14;
+        const topDecorationSpacing = mobile ? 6 : 8;
+        const topDecorationTotalWidth = (w * 3) + (topDecorationSpacing * 2);
+        const topRightLimit = canvas.width - padding;
+        const occupiedTopRight = shelfOccupiedRightEdge(0);
+        const topOverflow = occupiedTopRight + decorationGap + topDecorationTotalWidth > topRightLimit;
+        const topShelf = topOverflow ? Math.min(1, shelves - 1) : 0;
+        const preferredTopStart = occupiedTopRight + decorationGap;
+        const fallbackTopStart = slotX(slotCount - 3);
+        const maxTopStart = topRightLimit - topDecorationTotalWidth;
+        const topStartX = clamp(Math.max(fallbackTopStart, preferredTopStart), padding, maxTopStart);
+
         return {
-            // Preferences mug — last slot, top shelf
-            preferences: { x: slotX(slotCount - 1), y: slotY(0),            w, h },
+            // Preferences mug — top controls area, shifted right of shelf contents when needed.
+            preferences: { x: topStartX + (w + topDecorationSpacing) * 2, y: slotY(topShelf), w, h },
             // Notes notepad — last slot, bottom shelf
             notes:       { x: slotX(slotCount - 1), y: slotY(shelves - 1), w, h },
-            // Add-book ghost — second-to-last slot, top shelf
-            addBook:     { x: slotX(slotCount - 2), y: slotY(0),            w, h },
-            // Bookshelf search binoculars — third-to-last slot, top shelf
-            bookshelfSearch: { x: slotX(slotCount - 3), y: slotY(0),        w, h },
+            // Add-book ghost — middle icon in top controls area.
+            addBook:     { x: topStartX + (w + topDecorationSpacing), y: slotY(topShelf), w, h },
+            // Bookshelf search icon — left icon in top controls area.
+            bookshelfSearch: { x: topStartX, y: slotY(topShelf), w, h },
         };
     };
 
