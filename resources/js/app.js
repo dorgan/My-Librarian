@@ -333,7 +333,7 @@ if (initialStateElement) {
 
     const slotLayout = () => {
         const shelves = clamp(Number(state.preferences.shelfCount) || 4, 2, 8);
-        const padding = 28;
+        const padding = isMobileViewport() ? 12 : 24;
         const shelfSpacing = (canvas.height - (padding * 2)) / shelves;
         const maxBookPosition = state.books.reduce((largest, book) => Math.max(largest, Number(book.positionIndex) || 0), 0);
         const maxDividerPosition = (state.shelfDividers || []).reduce(
@@ -1292,6 +1292,7 @@ if (initialStateElement) {
     const drawBookcase = () => {
         const { shelves, padding, shelfSpacing } = slotLayout();
         const colors = themeColors();
+        const frameInset = isMobileViewport() ? 0 : 8;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = colors.background;
@@ -1300,14 +1301,15 @@ if (initialStateElement) {
         ctx.fillStyle = colors.frame;
         if (state.preferences.bookcaseShape === 'arched') {
             ctx.beginPath();
-            ctx.moveTo(12, canvas.height - 8);
-            ctx.lineTo(12, 36);
-            ctx.quadraticCurveTo(canvas.width / 2, -18, canvas.width - 12, 36);
-            ctx.lineTo(canvas.width - 12, canvas.height - 8);
+            const archInset = isMobileViewport() ? 0 : 12;
+            ctx.moveTo(archInset, canvas.height - frameInset);
+            ctx.lineTo(archInset, 36);
+            ctx.quadraticCurveTo(canvas.width / 2, -18, canvas.width - archInset, 36);
+            ctx.lineTo(canvas.width - archInset, canvas.height - frameInset);
             ctx.closePath();
             ctx.fill();
         } else {
-            ctx.fillRect(8, 8, canvas.width - 16, canvas.height - 16);
+            ctx.fillRect(frameInset, frameInset, canvas.width - (frameInset * 2), canvas.height - (frameInset * 2));
         }
 
         for (let shelf = 0; shelf < shelves; shelf += 1) {
