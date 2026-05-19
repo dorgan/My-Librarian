@@ -125,11 +125,10 @@
                 <p class="hint">Split shelves with little decor like bookends, fake plants, and knick-knacks.</p>
                 <form id="add-shelf-divider-form" class="stacked-form">
                     <label>Shelf <input name="shelf_index" type="number" min="0" value="0"></label>
-                    <label>Position <input name="position_index" type="number" min="0"
-                            value="0"></label>
                     <label>Divider style
                         <select name="style">
-                            <option value="bookend">Bookend</option>
+                            <option value="bookend_left">Bookend (left)</option>
+                            <option value="bookend_right">Bookend (right)</option>
                             <option value="plant">Fake plant</option>
                             <option value="knick_knack">Knick-knack</option>
                         </select>
@@ -140,6 +139,18 @@
                     it.</p>
                 <div id="selected-divider-controls" class="selected-divider-controls" hidden>
                     <p id="selected-divider-label" class="selected-book-meta">No divider selected</p>
+                    <label>Style
+                        <select id="selected-divider-style">
+                            <option value="bookend_left">Bookend (left)</option>
+                            <option value="bookend_right">Bookend (right)</option>
+                            <option value="plant">Fake plant</option>
+                            <option value="knick_knack">Knick-knack</option>
+                        </select>
+                    </label>
+                    <label>Position
+                        <input id="selected-divider-position" type="number" min="0" value="0">
+                    </label>
+                    <button id="update-divider" type="button" class="secondary-btn">Update divider</button>
                     <button id="remove-divider" type="button" class="danger-btn">Remove divider</button>
                 </div>
             </section>

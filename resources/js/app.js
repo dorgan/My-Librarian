@@ -100,6 +100,21 @@ if (initialStateElement) {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const state = JSON.parse(initialStateElement.textContent);
+    const normalizeCollection = (value) => {
+        if (Array.isArray(value)) {
+            return value;
+        }
+
+        if (value && typeof value === 'object') {
+            return Object.values(value);
+        }
+
+        return [];
+    };
+
+    state.books = normalizeCollection(state.books);
+    state.notes = normalizeCollection(state.notes);
+    state.shelfDividers = normalizeCollection(state.shelfDividers);
     let selectedBookId = null;
     let notesOpen = false;
     let controlsOpen = false;
@@ -148,6 +163,9 @@ if (initialStateElement) {
     const shelfDividerFeedback = document.getElementById('shelf-divider-feedback');
     const selectedDividerControls = document.getElementById('selected-divider-controls');
     const selectedDividerLabel = document.getElementById('selected-divider-label');
+    const selectedDividerStyle = document.getElementById('selected-divider-style');
+    const selectedDividerPosition = document.getElementById('selected-divider-position');
+    const updateDividerButton = document.getElementById('update-divider');
     const removeDividerButton = document.getElementById('remove-divider');
     const addNoteForm = document.getElementById('add-note-form');
     const openBookshelfPreferencesButton = document.getElementById('open-bookshelf-preferences');
@@ -166,7 +184,9 @@ if (initialStateElement) {
         notesOpen: null,
     };
     let dragState = null;
+    let dividerDragState = null;
     let lastBookTap = null;
+    let lastDividerTap = null;
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const isMobileViewport = () => window.matchMedia('(max-width: 640px)').matches;
@@ -198,6 +218,9 @@ if (initialStateElement) {
     const DOUBLE_ACTIVATION_MAX_DISTANCE = 24;
     const BOOK_TOUCH_GAP = 1;
     const BOOK_LEFT_INSET = 2;
+    const BOOK_TO_BOOK_GAP = 1;
+    const BOOK_TO_DIVIDER_GAP = 5;
+    const DIVIDER_TO_DIVIDER_GAP = 6;
 
     /** Scroll to an element after a short delay to let the panel animate open */
     const scrollToElementAfterDelay = (elementId, delay = 120) => {
@@ -368,6 +391,90 @@ if (initialStateElement) {
         .filter((divider) => divider.shelfIndex === shelfIndex)
         .sort((a, b) => a.positionIndex - b.positionIndex || a.id - b.id);
 
+    const shelfRenderLayout = (shelfIndex, options = {}) => {
+        const {
+            excludeBookId = null,
+            excludeDividerId = null,
+        } = options;
+        const { shelves, padding, shelfSpacing, slotWidth } = slotLayout();
+        const shelf = clamp(shelfIndex, 0, shelves - 1);
+        const uprightH = Math.max(72, shelfSpacing * 0.82);
+        const baseBookW = Math.max(24, Math.min(slotWidth * 0.95, 40));
+        const baseDividerW = clamp(baseBookW * 2, 44, Math.min(Math.max(baseBookW * 2, 56), 78));
+
+        const items = [
+            ...state.books
+                .filter((book) => book.shelfIndex === shelf && book.id !== excludeBookId)
+                .map((book) => ({
+                    id: book.id,
+                    type: 'book',
+                    positionIndex: Number(book.positionIndex) || 0,
+                    rotationMode: book.rotationMode || DEFAULT_ROTATION_MODE,
+                })),
+            ...(state.shelfDividers || [])
+                .filter((divider) => divider.shelfIndex === shelf && divider.id !== excludeDividerId)
+                .map((divider) => ({
+                    id: divider.id,
+                    type: 'divider',
+                    positionIndex: Number(divider.positionIndex) || 0,
+                })),
+        ].sort((a, b) => {
+            if (a.positionIndex !== b.positionIndex) {
+                return a.positionIndex - b.positionIndex;
+            }
+
+            if (a.type !== b.type) {
+                return a.type === 'book' ? -1 : 1;
+            }
+
+            return a.id - b.id;
+        });
+
+        const positions = new Map();
+        let cursorX = padding + BOOK_LEFT_INSET;
+        let previousType = null;
+
+        for (const item of items) {
+            if (previousType !== null) {
+                if (previousType === 'book' && item.type === 'book') {
+                    cursorX += BOOK_TO_BOOK_GAP;
+                } else if (previousType === 'divider' && item.type === 'divider') {
+                    cursorX += DIVIDER_TO_DIVIDER_GAP;
+                } else {
+                    cursorX += BOOK_TO_DIVIDER_GAP;
+                }
+            }
+
+            if (item.type === 'book') {
+                const angle = rotationAngle(item.rotationMode);
+                const profile = rotationProfile(baseBookW, uprightH, angle);
+                const contactX = item.rotationMode === 'tilt_left' ? profile.topLeftX : profile.minX;
+                const x = cursorX - ((baseBookW / 2) + contactX);
+
+                positions.set(`book:${item.id}`, {
+                    x,
+                    w: baseBookW,
+                    h: uprightH,
+                    a: angle,
+                });
+
+                cursorX += profile.width;
+            } else {
+                positions.set(`divider:${item.id}`, {
+                    x: cursorX,
+                    w: baseDividerW,
+                    h: uprightH,
+                });
+
+                cursorX += baseDividerW;
+            }
+
+            previousType = item.type;
+        }
+
+        return { positions, uprightH, baseBookW, baseDividerW };
+    };
+
     const selectedDivider = () => (state.shelfDividers || []).find((divider) => divider.id === selectedDividerId) || null;
 
     const hasRightNeighbor = (book) => sortedShelfBooks(book.shelfIndex, book.id)
@@ -392,32 +499,14 @@ if (initialStateElement) {
         const shelf = clamp(book.shelfIndex, 0, shelves - 1);
         const pos = clamp(book.positionIndex, 0, slotCount - 1);
         const mode = book.rotationMode || DEFAULT_ROTATION_MODE;
-        const uprightH = Math.max(72, shelfSpacing * 0.82);
-        const uprightW = Math.max(24, Math.min(slotWidth * 0.95, 40));
+        const layout = shelfRenderLayout(shelf);
+        const placed = layout.positions.get(`book:${book.id}`);
+        const uprightH = placed?.h ?? Math.max(72, shelfSpacing * 0.82);
+        const uprightW = placed?.w ?? Math.max(24, Math.min(slotWidth * 0.95, 40));
         const shelfTop = padding + (shelfSpacing * (shelf + 1));
         const angle = rotationAngle(mode);
-        const shelfBooks = [
-            ...sortedShelfBooks(shelf, book.id),
-            { ...book, shelfIndex: shelf, positionIndex: pos, rotationMode: mode },
-        ].sort((a, b) => a.positionIndex - b.positionIndex || a.id - b.id);
-
-        let renderedLeftEdge = padding + BOOK_LEFT_INSET;
-        let targetX = padding + (slotWidth * pos) + (slotWidth - uprightW) / 2;
-
-        for (const shelfBook of shelfBooks) {
-            const shelfBookMode = shelfBook.rotationMode || DEFAULT_ROTATION_MODE;
-            const shelfBookAngle = rotationAngle(shelfBookMode);
-            const profile = rotationProfile(uprightW, uprightH, shelfBookAngle);
-            const contactX = shelfBookMode === 'tilt_left' ? profile.topLeftX : profile.minX;
-            const x = renderedLeftEdge - ((uprightW / 2) + contactX);
-
-            if (shelfBook.id === book.id) {
-                targetX = x;
-                break;
-            }
-
-            renderedLeftEdge += profile.width + BOOK_TOUCH_GAP;
-        }
+        const fallbackX = padding + (slotWidth * pos) + (slotWidth - uprightW) / 2;
+        const targetX = placed?.x ?? fallbackX;
 
         if (mode === 'side') {
             const w = uprightW;
@@ -720,22 +809,85 @@ if (initialStateElement) {
         ctx.stroke();
     };
 
-    const dividerRect = (divider) => {
+    const dividerRect = (divider, layout = null) => {
         const { shelves, slotCount, padding, shelfSpacing, slotWidth } = slotLayout();
         const shelf = clamp(Number(divider.shelfIndex) || 0, 0, shelves - 1);
         const pos = clamp(Number(divider.positionIndex) || 0, 0, slotCount - 1);
-        const h = Math.max(72, shelfSpacing * 0.82);
-        const w = Math.max(14, Math.min(slotWidth * 0.44, 20));
+        const activeLayout = layout ?? shelfRenderLayout(shelf);
+        const placed = activeLayout.positions.get(`divider:${divider.id}`);
+        const h = placed?.h ?? Math.max(72, shelfSpacing * 0.82);
+        const w = placed?.w ?? Math.max(22, Math.min(slotWidth * 0.72, 34));
         const shelfTop = padding + (shelfSpacing * (shelf + 1));
-        const x = padding + (slotWidth * pos) + slotWidth - (w / 2);
+        const fallbackX = padding + (slotWidth * pos) + slotWidth - (w / 2);
+        const x = placed?.x ?? fallbackX;
         const y = shelfTop - h - 8;
 
         return { x, y, w, h };
     };
 
+    const dividerVariant = (divider, count = 3) => {
+        const id = Number(divider.id) || 0;
+        const shelf = Number(divider.shelfIndex) || 0;
+        const position = Number(divider.positionIndex) || 0;
+        const seed = (id * 37) + (shelf * 11) + (position * 7);
+
+        return Math.abs(seed) % count;
+    };
+
+    const adjacentBookendPair = (divider) => {
+        const style = divider.style;
+        if (style !== 'bookend_left' && style !== 'bookend_right') {
+            return null;
+        }
+
+        const siblingStyle = style === 'bookend_left' ? 'bookend_right' : 'bookend_left';
+        const shelf = Number(divider.shelfIndex) || 0;
+        const position = Number(divider.positionIndex) || 0;
+        const dividers = state.shelfDividers || [];
+
+        const candidates = dividers
+            .filter((entry) => Number(entry.id) !== Number(divider.id))
+            .filter((entry) => entry.style === siblingStyle)
+            .filter((entry) => (Number(entry.shelfIndex) || 0) === shelf)
+            .filter((entry) => Math.abs((Number(entry.positionIndex) || 0) - position) <= 1)
+            .sort((a, b) => {
+                const distanceA = Math.abs((Number(a.positionIndex) || 0) - position);
+                const distanceB = Math.abs((Number(b.positionIndex) || 0) - position);
+
+                if (distanceA !== distanceB) {
+                    return distanceA - distanceB;
+                }
+
+                return (Number(a.id) || 0) - (Number(b.id) || 0);
+            });
+
+        return candidates[0] || null;
+    };
+
+    const pairedBookendVariant = (divider, count = 3) => {
+        const pair = adjacentBookendPair(divider);
+        if (!pair) {
+            return dividerVariant(divider, count);
+        }
+
+        const dividerId = Number(divider.id) || 0;
+        const pairId = Number(pair.id) || 0;
+        const shelf = Number(divider.shelfIndex) || 0;
+        const lowerId = Math.min(dividerId, pairId);
+        const upperId = Math.max(dividerId, pairId);
+        const seed = (lowerId * 53) + (upperId * 19) + (shelf * 11);
+
+        return Math.abs(seed) % count;
+    };
+
     const drawShelfDivider = (divider) => {
         const rect = dividerRect(divider);
         const isSelected = divider.id === selectedDividerId;
+        const shelfColor = themeColors().shelf;
+        const frameColor = themeColors().frame;
+        const variant = (divider.style === 'bookend_left' || divider.style === 'bookend_right')
+            ? pairedBookendVariant(divider)
+            : dividerVariant(divider);
 
         ctx.save();
         ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
@@ -744,47 +896,327 @@ if (initialStateElement) {
         ctx.shadowOffsetY = 2;
 
         if (divider.style === 'plant') {
-            roundRect(rect.x + (rect.w * 0.1), rect.y + (rect.h * 0.72), rect.w * 0.8, rect.h * 0.26, 4);
-            ctx.fillStyle = '#8b5a2b';
+            // Wooden planter base
+            const planterX = rect.x + (rect.w * 0.1);
+            const planterY = rect.y + (rect.h * 0.74);
+            const planterW = rect.w * 0.8;
+            const planterH = rect.h * 0.22;
+
+            const planter = ctx.createLinearGradient(planterX, planterY, planterX, planterY + planterH);
+            const planterPalettes = [
+                ['#9f6a3d', '#6f4527'],
+                ['#8e5d35', '#5b3a23'],
+                ['#a7784c', '#6b4328'],
+            ];
+            const [planterLight, planterDark] = planterPalettes[variant];
+            planter.addColorStop(0, planterLight);
+            planter.addColorStop(1, planterDark);
+            roundRect(planterX, planterY, planterW, planterH, 4);
+            ctx.fillStyle = planter;
             ctx.fill();
-            ctx.fillStyle = '#2f7d32';
-            ctx.beginPath();
-            ctx.ellipse(rect.x + (rect.w * 0.5), rect.y + (rect.h * 0.46), rect.w * 0.36, rect.h * 0.32, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#1f5f25';
+            ctx.strokeStyle = '#5b371f';
+            ctx.lineWidth = 1.1;
+            ctx.stroke();
+
+            ctx.fillStyle = '#c08b58';
+            ctx.fillRect(planterX + 2, planterY + 2, planterW - 4, Math.max(2, planterH * 0.16));
+
+            // Leaves
+            const leafColors = ['#2b7a3c', '#3a914d', '#2f6c37'];
+            const leafPresets = [
+                [
+                    [0.28, 0.56, -0.9],
+                    [0.42, 0.46, -0.4],
+                    [0.58, 0.45, 0.35],
+                    [0.72, 0.56, 0.85],
+                    [0.5, 0.36, 0],
+                ],
+                [
+                    [0.24, 0.58, -1.05],
+                    [0.38, 0.49, -0.55],
+                    [0.52, 0.38, 0.05],
+                    [0.65, 0.48, 0.55],
+                    [0.76, 0.6, 1],
+                ],
+                [
+                    [0.3, 0.6, -0.75],
+                    [0.46, 0.5, -0.2],
+                    [0.6, 0.52, 0.35],
+                    [0.69, 0.43, 0.68],
+                    [0.5, 0.33, 0],
+                    [0.38, 0.38, -0.35],
+                ],
+            ];
+            const leafCenters = leafPresets[variant];
+
+            leafCenters.forEach(([cx, cy, rot], index) => {
+                ctx.save();
+                ctx.translate(rect.x + (rect.w * cx), rect.y + (rect.h * cy));
+                ctx.rotate(rot);
+                ctx.fillStyle = leafColors[index % leafColors.length];
+                ctx.beginPath();
+                ctx.ellipse(0, 0, rect.w * 0.1, rect.h * 0.12, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#1e5a2d';
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.moveTo(0, -rect.h * 0.08);
+                ctx.lineTo(0, rect.h * 0.08);
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            ctx.strokeStyle = '#315f38';
             ctx.lineWidth = 1.2;
             ctx.beginPath();
-            ctx.moveTo(rect.x + (rect.w * 0.5), rect.y + (rect.h * 0.52));
-            ctx.lineTo(rect.x + (rect.w * 0.5), rect.y + (rect.h * 0.78));
+            ctx.moveTo(rect.x + (rect.w * 0.35), rect.y + (rect.h * 0.72));
+            ctx.quadraticCurveTo(rect.x + (rect.w * 0.42), rect.y + (rect.h * 0.6), rect.x + (rect.w * 0.47), rect.y + (rect.h * 0.46));
+            ctx.moveTo(rect.x + (rect.w * 0.63), rect.y + (rect.h * 0.72));
+            ctx.quadraticCurveTo(rect.x + (rect.w * 0.58), rect.y + (rect.h * 0.58), rect.x + (rect.w * 0.54), rect.y + (rect.h * 0.44));
             ctx.stroke();
         } else if (divider.style === 'knick_knack') {
-            roundRect(rect.x + (rect.w * 0.05), rect.y + (rect.h * 0.06), rect.w * 0.9, rect.h * 0.9, 5);
-            const ornament = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
-            ornament.addColorStop(0, '#d6c6a8');
-            ornament.addColorStop(1, '#b99f7b');
-            ctx.fillStyle = ornament;
+            // Carved figurine on a pedestal
+            const pedestalX = rect.x + (rect.w * 0.12);
+            const pedestalY = rect.y + (rect.h * 0.8);
+            const pedestalW = rect.w * 0.76;
+            const pedestalH = rect.h * 0.15;
+            const wood = ctx.createLinearGradient(pedestalX, pedestalY, pedestalX + pedestalW, pedestalY + pedestalH);
+            wood.addColorStop(0, '#7b4f2d');
+            wood.addColorStop(1, '#5b3921');
+            roundRect(pedestalX, pedestalY, pedestalW, pedestalH, 3);
+            ctx.fillStyle = wood;
             ctx.fill();
-            ctx.strokeStyle = '#7a6348';
-            ctx.lineWidth = 1.4;
+            ctx.strokeStyle = '#442b19';
+            ctx.lineWidth = 1;
             ctx.stroke();
-            ctx.fillStyle = '#6a4d2f';
-            ctx.font = `${Math.min(rect.w + 2, MAX_DECORATION_ICON_SIZE + 2)}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('★', rect.x + (rect.w / 2), rect.y + (rect.h / 2));
+
+            const centerX = rect.x + (rect.w / 2);
+
+            if (variant === 0) {
+                const bodyTop = rect.y + (rect.h * 0.2);
+                const bodyBottom = rect.y + (rect.h * 0.82);
+
+                ctx.fillStyle = '#91603a';
+                ctx.beginPath();
+                ctx.moveTo(centerX, bodyTop);
+                ctx.bezierCurveTo(centerX + (rect.w * 0.18), rect.y + (rect.h * 0.25), centerX + (rect.w * 0.24), rect.y + (rect.h * 0.52), centerX + (rect.w * 0.12), bodyBottom);
+                ctx.lineTo(centerX - (rect.w * 0.12), bodyBottom);
+                ctx.bezierCurveTo(centerX - (rect.w * 0.24), rect.y + (rect.h * 0.52), centerX - (rect.w * 0.18), rect.y + (rect.h * 0.25), centerX, bodyTop);
+                ctx.fill();
+
+                ctx.fillStyle = '#a36f45';
+                ctx.beginPath();
+                ctx.arc(centerX, rect.y + (rect.h * 0.19), rect.w * 0.11, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#5b3921';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(centerX, rect.y + (rect.h * 0.31));
+                ctx.lineTo(centerX, rect.y + (rect.h * 0.72));
+                ctx.moveTo(centerX - (rect.w * 0.09), rect.y + (rect.h * 0.47));
+                ctx.quadraticCurveTo(centerX, rect.y + (rect.h * 0.5), centerX + (rect.w * 0.09), rect.y + (rect.h * 0.47));
+                ctx.stroke();
+            } else if (variant === 1) {
+                ctx.fillStyle = '#8d5c36';
+                ctx.beginPath();
+                ctx.ellipse(centerX, rect.y + (rect.h * 0.48), rect.w * 0.2, rect.h * 0.28, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#a87246';
+                ctx.beginPath();
+                ctx.arc(centerX, rect.y + (rect.h * 0.23), rect.w * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#5b3921';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(centerX - (rect.w * 0.11), rect.y + (rect.h * 0.43));
+                ctx.quadraticCurveTo(centerX, rect.y + (rect.h * 0.39), centerX + (rect.w * 0.11), rect.y + (rect.h * 0.43));
+                ctx.moveTo(centerX - (rect.w * 0.1), rect.y + (rect.h * 0.62));
+                ctx.quadraticCurveTo(centerX, rect.y + (rect.h * 0.68), centerX + (rect.w * 0.1), rect.y + (rect.h * 0.62));
+                ctx.stroke();
+            } else {
+                ctx.fillStyle = '#87542f';
+                ctx.beginPath();
+                ctx.moveTo(centerX, rect.y + (rect.h * 0.18));
+                ctx.lineTo(centerX + (rect.w * 0.17), rect.y + (rect.h * 0.52));
+                ctx.lineTo(centerX, rect.y + (rect.h * 0.8));
+                ctx.lineTo(centerX - (rect.w * 0.17), rect.y + (rect.h * 0.52));
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#b27f56';
+                ctx.beginPath();
+                ctx.arc(centerX, rect.y + (rect.h * 0.18), rect.w * 0.08, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#5b3921';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(centerX, rect.y + (rect.h * 0.3));
+                ctx.lineTo(centerX, rect.y + (rect.h * 0.72));
+                ctx.moveTo(centerX - (rect.w * 0.08), rect.y + (rect.h * 0.53));
+                ctx.lineTo(centerX + (rect.w * 0.08), rect.y + (rect.h * 0.53));
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = 'rgba(255, 232, 196, 0.35)';
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(pedestalX + 3, pedestalY + pedestalH * 0.4);
+            ctx.lineTo(pedestalX + pedestalW - 3, pedestalY + pedestalH * 0.4);
+            ctx.stroke();
         } else {
-            roundRect(rect.x + (rect.w * 0.08), rect.y + (rect.h * 0.04), rect.w * 0.84, rect.h * 0.92, 3);
-            const bookend = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
-            bookend.addColorStop(0, '#4b5563');
-            bookend.addColorStop(1, '#111827');
-            ctx.fillStyle = bookend;
+            // Decorative metal bookend with base plate and lattice-like branches.
+            const isLeftBookend = divider.style !== 'bookend_right';
+            const baseInset = rect.w * 0.06;
+            const baseY = rect.y + (rect.h * 0.84);
+            const baseW = rect.w * 0.9;
+            const baseH = rect.h * 0.12;
+
+            const basePlate = ctx.createLinearGradient(rect.x, baseY, rect.x + baseW, baseY + baseH);
+            const metalPalettes = [
+                ['#151a22', '#2f3743', '#4b545f', '#2f3743', '#1a1f27'],
+                ['#1e2230', '#3a4151', '#636c7a', '#3a4151', '#222734'],
+                ['#23292f', '#424b56', '#6e7784', '#424b56', '#2a3138'],
+            ];
+            const [baseStart, baseEnd, uprightStart, uprightMid, uprightEnd] = metalPalettes[variant];
+            basePlate.addColorStop(0, baseStart);
+            basePlate.addColorStop(1, baseEnd);
+
+            ctx.fillStyle = basePlate;
+            if (isLeftBookend) {
+                roundRect(rect.x + baseInset, baseY, baseW, baseH, 2);
+            } else {
+                roundRect(rect.x + (rect.w * 0.04), baseY, baseW, baseH, 2);
+            }
             ctx.fill();
-            ctx.strokeStyle = '#030712';
+
+            const uprightW = rect.w * 0.58;
+            const uprightH = rect.h * 0.8;
+            const uprightX = isLeftBookend ? rect.x + (rect.w * 0.09) : rect.x + (rect.w * 0.33);
+            const uprightY = rect.y + (rect.h * 0.04);
+
+            const upright = ctx.createLinearGradient(uprightX, uprightY, uprightX + uprightW, uprightY + uprightH);
+            upright.addColorStop(0, uprightStart);
+            upright.addColorStop(0.45, uprightMid);
+            upright.addColorStop(1, uprightEnd);
+            roundRect(uprightX, uprightY, uprightW, uprightH, 3);
+            ctx.fillStyle = upright;
+            ctx.fill();
+            ctx.strokeStyle = '#0f1217';
             ctx.lineWidth = 1.2;
             ctx.stroke();
-            ctx.fillStyle = '#f3f4f6';
-            ctx.fillRect(rect.x + (rect.w * 0.22), rect.y + (rect.h * 0.2), rect.w * 0.56, rect.h * 0.08);
+
+            // Tree-branch motif (light cutouts + dark branches) inspired by decorative steel bookends.
+            ctx.strokeStyle = '#111827';
+            ctx.lineWidth = 1.6;
+            ctx.lineCap = 'round';
+
+            const branchStartX = isLeftBookend ? uprightX + (uprightW * 0.16) : uprightX + (uprightW * 0.84);
+            const direction = isLeftBookend ? 1 : -1;
+
+            ctx.beginPath();
+            ctx.moveTo(branchStartX, uprightY + (uprightH * 0.88));
+            ctx.lineTo(branchStartX + (uprightW * 0.04 * direction), uprightY + (uprightH * 0.58));
+            ctx.lineTo(branchStartX + (uprightW * 0.08 * direction), uprightY + (uprightH * 0.24));
+            ctx.stroke();
+
+            const branchLines = [
+                variant === 0
+                    ? [0.58, 0.46, 0.28]
+                    : variant === 1
+                        ? [0.54, 0.42, 0.24]
+                        : [0.61, 0.48, 0.32],
+                variant === 0
+                    ? [0.49, 0.32, 0.2]
+                    : variant === 1
+                        ? [0.44, 0.3, 0.14]
+                        : [0.52, 0.29, 0.22],
+                variant === 0
+                    ? [0.66, 0.64, 0.37]
+                    : variant === 1
+                        ? [0.69, 0.62, 0.42]
+                        : [0.63, 0.66, 0.35],
+                variant === 0
+                    ? [0.36, 0.55, 0.08]
+                    : variant === 1
+                        ? [0.38, 0.58, 0.1]
+                        : [0.33, 0.53, 0.06],
+            ];
+
+            for (const [fromY, toY, tipX] of branchLines) {
+                ctx.beginPath();
+                ctx.moveTo(branchStartX + (uprightW * 0.05 * direction), uprightY + (uprightH * fromY));
+                ctx.lineTo(uprightX + (uprightW * tipX), uprightY + (uprightH * toY));
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = 'rgba(240, 244, 249, 0.78)';
+            const holePresets = [
+                [
+                    [0.21, 0.2, 0.19, 0.16],
+                    [0.48, 0.2, 0.2, 0.17],
+                    [0.27, 0.43, 0.2, 0.17],
+                    [0.52, 0.49, 0.18, 0.16],
+                    [0.2, 0.66, 0.19, 0.17],
+                    [0.5, 0.69, 0.2, 0.16],
+                ],
+                [
+                    [0.18, 0.18, 0.22, 0.16],
+                    [0.46, 0.24, 0.22, 0.16],
+                    [0.28, 0.46, 0.16, 0.18],
+                    [0.53, 0.52, 0.2, 0.16],
+                    [0.23, 0.71, 0.18, 0.14],
+                    [0.49, 0.73, 0.2, 0.14],
+                ],
+                [
+                    [0.25, 0.2, 0.16, 0.17],
+                    [0.47, 0.18, 0.24, 0.18],
+                    [0.2, 0.44, 0.22, 0.17],
+                    [0.5, 0.46, 0.2, 0.18],
+                    [0.24, 0.66, 0.16, 0.16],
+                    [0.47, 0.69, 0.23, 0.15],
+                ],
+            ];
+            const holes = holePresets[variant];
+
+            holes.forEach(([hx, hy, hw, hh]) => {
+                const x = uprightX + (uprightW * (isLeftBookend ? hx : (1 - hx - hw)));
+                const y = uprightY + (uprightH * hy);
+                roundRect(x, y, uprightW * hw, uprightH * hh, 2);
+                ctx.fill();
+            });
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+            ctx.lineWidth = 0.9;
+            ctx.beginPath();
+            ctx.moveTo(uprightX + 2, uprightY + 2);
+            ctx.lineTo(uprightX + uprightW - 2, uprightY + 2);
+            ctx.stroke();
+
+            // Small grounding shadow where the bookend meets the shelf.
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
+            ctx.fillRect(rect.x + (rect.w * 0.05), rect.y + (rect.h * 0.95), rect.w * 0.9, rect.h * 0.03);
+
+            // Blend base with shelf tone for depth.
+            ctx.strokeStyle = shelfColor;
+            ctx.globalAlpha = 0.38;
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(rect.x + (rect.w * 0.1), baseY + baseH - 1);
+            ctx.lineTo(rect.x + (rect.w * 0.86), baseY + baseH - 1);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
         }
+
+        // Thin ambient keyline so tiny objects still read on dark frame themes.
+        ctx.strokeStyle = frameColor === '#1f2937' ? 'rgba(255,255,255,0.18)' : 'rgba(17,24,39,0.2)';
+        ctx.lineWidth = 0.6;
+        roundRect(rect.x + 0.6, rect.y + 0.6, rect.w - 1.2, rect.h - 1.2, 3);
+        ctx.stroke();
 
         if (isSelected) {
             ctx.shadowColor = 'transparent';
@@ -800,7 +1232,7 @@ if (initialStateElement) {
     const findDividerAtPoint = (x, y) => {
         for (const divider of [...(state.shelfDividers || [])].reverse()) {
             const rect = dividerRect(divider);
-            if (hitTest(x, y, rect)) {
+            if (hitTest(x, y, rect, isMobileViewport() ? 12 : 8)) {
                 return divider;
             }
         }
@@ -1136,17 +1568,27 @@ if (initialStateElement) {
 
         if (!divider) {
             selectedDividerControls.hidden = true;
+            selectedDividerControls.style.display = 'none';
             selectedDividerLabel.textContent = 'No divider selected';
+            selectedDividerStyle.value = 'bookend_left';
+            selectedDividerPosition.value = '0';
             return;
         }
 
         selectedDividerControls.hidden = false;
+        selectedDividerControls.style.display = 'grid';
         const styleLabel = divider.style === 'knick_knack'
             ? 'Knick-knack'
             : divider.style === 'plant'
                 ? 'Fake plant'
-                : 'Bookend';
+                : divider.style === 'bookend_left'
+                    ? 'Bookend (left)'
+                    : divider.style === 'bookend_right'
+                        ? 'Bookend (right)'
+                        : 'Bookend';
         selectedDividerLabel.textContent = `${styleLabel} on shelf ${Number(divider.shelfIndex) + 1}, position ${Number(divider.positionIndex) + 1}`;
+        selectedDividerStyle.value = divider.style;
+        selectedDividerPosition.value = String(Number(divider.positionIndex));
     };
 
     const renderSelectedBook = () => {
@@ -1233,9 +1675,9 @@ if (initialStateElement) {
     };
 
     const applyState = (newState) => {
-        state.books = newState.books;
-        state.notes = newState.notes;
-        state.shelfDividers = newState.shelfDividers || [];
+        state.books = normalizeCollection(newState.books);
+        state.notes = normalizeCollection(newState.notes);
+        state.shelfDividers = normalizeCollection(newState.shelfDividers);
         state.preferences = newState.preferences;
 
         const currentBookIds = new Set(state.books.map((book) => book.id));
@@ -1339,30 +1781,140 @@ if (initialStateElement) {
     };
 
     const placementFromPoint = (x, y, movingBookId = null) => {
-        const { shelves, padding, shelfSpacing } = slotLayout();
+        const { shelves, slotCount, padding, shelfSpacing } = slotLayout();
         const shelfIndex = clamp(Math.floor((y - padding) / shelfSpacing), 0, shelves - 1);
-        const shelfBooks = sortedShelfBooks(shelfIndex, movingBookId);
-        let positionIndex = shelfBooks.length;
+        const layout = shelfRenderLayout(shelfIndex, { excludeBookId: movingBookId });
+        const shelfItems = [];
 
-        for (let index = 0; index < shelfBooks.length; index += 1) {
-            const shelfBook = shelfBooks[index];
-            const anim = animatedBooks.get(shelfBook.id);
-            const fallbackRect = anim ? null : bookTargetRect(shelfBook);
-            const centerX = anim
-                ? anim.x + (anim.w / 2)
-                : fallbackRect.x + (fallbackRect.w / 2);
+        for (const book of state.books) {
+            if (book.id === movingBookId || book.shelfIndex !== shelfIndex) {
+                continue;
+            }
 
-            if (x < centerX) {
-                positionIndex = index;
-                break;
+            const placed = layout.positions.get(`book:${book.id}`);
+            const centerX = placed
+                ? placed.x + (placed.w / 2)
+                : bookTargetRect(book).x + (bookTargetRect(book).w / 2);
+
+            shelfItems.push({
+                id: book.id,
+                positionIndex: Number(book.positionIndex) || 0,
+                centerX,
+            });
+        }
+
+        for (const divider of state.shelfDividers || []) {
+            if (divider.shelfIndex !== shelfIndex) {
+                continue;
+            }
+
+            const rect = dividerRect(divider, layout);
+            shelfItems.push({
+                id: divider.id,
+                positionIndex: Number(divider.positionIndex) || 0,
+                centerX: rect.x + (rect.w / 2),
+            });
+        }
+
+        shelfItems.sort((a, b) => a.positionIndex - b.positionIndex || a.centerX - b.centerX || a.id - b.id);
+
+        let positionIndex = 0;
+        if (shelfItems.length) {
+            const lastItem = shelfItems[shelfItems.length - 1];
+            positionIndex = (lastItem?.positionIndex ?? 0) + 1;
+
+            for (const item of shelfItems) {
+                if (x < item.centerX) {
+                    positionIndex = item.positionIndex;
+                    break;
+                }
             }
         }
+
+        positionIndex = clamp(positionIndex, 0, slotCount - 1);
+
+        return { shelf_index: shelfIndex, position_index: positionIndex };
+    };
+
+    const dividerPlacementFromPoint = (x, y, movingDividerId = null) => {
+        const { shelves, slotCount, padding, shelfSpacing } = slotLayout();
+        const shelfIndex = clamp(Math.floor((y - padding) / shelfSpacing), 0, shelves - 1);
+        const layout = shelfRenderLayout(shelfIndex, { excludeDividerId: movingDividerId });
+
+        const shelfItems = [];
+
+        for (const book of state.books) {
+            if (book.shelfIndex !== shelfIndex) {
+                continue;
+            }
+
+            const placed = layout.positions.get(`book:${book.id}`);
+            const centerX = placed
+                ? placed.x + (placed.w / 2)
+                : bookTargetRect(book).x + (bookTargetRect(book).w / 2);
+
+            shelfItems.push({
+                positionIndex: Number(book.positionIndex) || 0,
+                centerX,
+                id: book.id,
+            });
+        }
+
+        for (const divider of state.shelfDividers || []) {
+            if (divider.id === movingDividerId || divider.shelfIndex !== shelfIndex) {
+                continue;
+            }
+
+            const rect = dividerRect(divider, layout);
+            shelfItems.push({
+                positionIndex: Number(divider.positionIndex) || 0,
+                centerX: rect.x + (rect.w / 2),
+                id: divider.id,
+            });
+        }
+
+        shelfItems.sort((a, b) => a.positionIndex - b.positionIndex || a.centerX - b.centerX || a.id - b.id);
+
+        let positionIndex = 0;
+        if (shelfItems.length) {
+            const lastItem = shelfItems[shelfItems.length - 1];
+            positionIndex = (lastItem?.positionIndex ?? 0) + 1;
+
+            for (const item of shelfItems) {
+                if (x < item.centerX) {
+                    positionIndex = item.positionIndex;
+                    break;
+                }
+            }
+        }
+
+        positionIndex = clamp(positionIndex, 0, slotCount - 1);
 
         return { shelf_index: shelfIndex, position_index: positionIndex };
     };
 
     const handleCanvasTap = (x, y) => {
         const decors = getDecorationRects();
+
+        const divider = findDividerAtPoint(x, y);
+        if (divider) {
+            selectedDividerId = divider.id;
+            selectedBookId = null;
+            renderSelectedBook();
+            renderSelectedDivider();
+            lastBookTap = null;
+            return;
+        }
+
+        const book = findBookAtPoint(x, y);
+        if (book) {
+            selectedBookId = book.id;
+            selectedDividerId = null;
+            renderSelectedBook();
+            renderSelectedDivider();
+            lastBookTap = null;
+            return;
+        }
 
         if (decorationHitTest(x, y, decors.preferences)) {
             openPanel('bookshelfPreferences');
@@ -1388,27 +1940,6 @@ if (initialStateElement) {
             return;
         }
 
-        // Check book spines
-        const book = findBookAtPoint(x, y);
-        if (book) {
-            selectedBookId = book.id;
-            selectedDividerId = null;
-            renderSelectedBook();
-            renderSelectedDivider();
-            lastBookTap = null;
-            return;
-        }
-
-        const divider = findDividerAtPoint(x, y);
-        if (divider) {
-            selectedDividerId = divider.id;
-            selectedBookId = null;
-            renderSelectedBook();
-            renderSelectedDivider();
-            lastBookTap = null;
-            return;
-        }
-
         // Click on empty shelf — close panels
         selectedBookId = null;
         selectedDividerId = null;
@@ -1421,6 +1952,12 @@ if (initialStateElement) {
     const openSelectedBookControls = () => {
         openPanel('controls');
         scrollToElementAfterDelay('selected-book-orientation');
+    };
+
+    const openSelectedDividerControls = () => {
+        openPanel('controls');
+        scrollToElementAfterDelay('selected-divider-controls');
+        focusElementAfterDelay('selected-divider-style');
     };
 
     const handleBookTap = (bookId, x, y, pointerType) => {
@@ -1446,12 +1983,56 @@ if (initialStateElement) {
         lastBookTap = { bookId, x, y, time: now, pointerType };
     };
 
+    const handleDividerTap = (dividerId, x, y, pointerType) => {
+        selectedDividerId = dividerId;
+        selectedBookId = null;
+        renderSelectedBook();
+        renderSelectedDivider();
+
+        const now = Date.now();
+        const isDoubleTap =
+            lastDividerTap
+            && lastDividerTap.dividerId === dividerId
+            && lastDividerTap.pointerType === pointerType
+            && (now - lastDividerTap.time) <= DOUBLE_ACTIVATION_MAX_MS
+            && Math.hypot(x - lastDividerTap.x, y - lastDividerTap.y) <= DOUBLE_ACTIVATION_MAX_DISTANCE;
+
+        if (isDoubleTap) {
+            lastDividerTap = null;
+            openSelectedDividerControls();
+            return;
+        }
+
+        lastDividerTap = { dividerId, x, y, time: now, pointerType };
+    };
+
     canvas.addEventListener('pointerdown', (event) => {
         const { x, y } = canvasPointFromEvent(event);
+        const divider = findDividerAtPoint(x, y);
+        if (divider) {
+            selectedDividerId = divider.id;
+            selectedBookId = null;
+            renderSelectedBook();
+            renderSelectedDivider();
+            lastBookTap = null;
+            dragState = null;
+            dividerDragState = {
+                pointerId: event.pointerId,
+                dividerId: divider.id,
+                startX: x,
+                startY: y,
+                moved: false,
+            };
+            canvas.setPointerCapture(event.pointerId);
+            return;
+        }
+
         const book = findBookAtPoint(x, y);
         if (!book) {
             dragState = null;
+            dividerDragState = null;
             lastBookTap = null;
+            lastDividerTap = null;
             handleCanvasTap(x, y);
             return;
         }
@@ -1463,6 +2044,7 @@ if (initialStateElement) {
         selectedDividerId = null;
         renderSelectedBook();
         renderSelectedDivider();
+        lastDividerTap = null;
 
         dragState = {
             pointerId: event.pointerId,
@@ -1473,11 +2055,25 @@ if (initialStateElement) {
             offsetY: y - anim.y,
             moved: false,
         };
+        dividerDragState = null;
         canvas.setPointerCapture(event.pointerId);
     });
 
     canvas.addEventListener('pointermove', (event) => {
         const { x, y } = canvasPointFromEvent(event);
+
+        if (dividerDragState && dividerDragState.pointerId === event.pointerId) {
+            dividerDragState.moved = dividerDragState.moved
+                || Math.hypot(x - dividerDragState.startX, y - dividerDragState.startY) > DRAG_MOVEMENT_THRESHOLD;
+
+            if (dividerDragState.moved) {
+                const placement = dividerPlacementFromPoint(x, y, dividerDragState.dividerId);
+                selectedDividerPosition.value = String(placement.position_index);
+            }
+
+            canvas.style.cursor = 'grabbing';
+            return;
+        }
 
         if (dragState && dragState.pointerId === event.pointerId) {
             const anim = animatedBooks.get(dragState.bookId);
@@ -1504,6 +2100,40 @@ if (initialStateElement) {
     });
 
     canvas.addEventListener('pointerup', async (event) => {
+        if (dividerDragState && dividerDragState.pointerId === event.pointerId) {
+            const { x, y } = canvasPointFromEvent(event);
+            const { dividerId, moved } = dividerDragState;
+            canvas.releasePointerCapture(event.pointerId);
+            dividerDragState = null;
+
+            if (!moved) {
+                handleDividerTap(dividerId, x, y, event.pointerType);
+                return;
+            }
+
+            const divider = state.shelfDividers.find((entry) => entry.id === dividerId);
+            if (!divider) {
+                return;
+            }
+
+            const placement = dividerPlacementFromPoint(x, y, dividerId);
+
+            try {
+                const updated = await fetchJson(`/api/shelf-dividers/${dividerId}`, 'PATCH', {
+                    shelf_index: placement.shelf_index,
+                    position_index: placement.position_index,
+                    style: divider.style,
+                });
+                applyState(updated);
+                shelfDividerFeedback.textContent = 'Shelf divider repositioned.';
+                lastDividerTap = null;
+            } catch {
+                shelfDividerFeedback.textContent = 'Could not reposition divider.';
+            }
+
+            return;
+        }
+
         if (!dragState || dragState.pointerId !== event.pointerId) {
             return;
         }
@@ -1713,18 +2343,38 @@ if (initialStateElement) {
 
         const payload = {
             shelf_index: Number(addShelfDividerForm.shelf_index.value),
-            position_index: Number(addShelfDividerForm.position_index.value),
             style: addShelfDividerForm.style.value,
         };
 
         try {
             const updated = await fetchJson('/api/shelf-dividers', 'POST', payload);
             applyState(updated);
-            shelfDividerFeedback.textContent = 'Shelf divider added. Tap a divider on the shelf to remove it.';
+            shelfDividerFeedback.textContent = 'Shelf divider added at the shelf end. Tap a divider on the shelf to remove it.';
             selectedDividerId = null;
             renderSelectedDivider();
         } catch {
-            shelfDividerFeedback.textContent = 'A divider already exists there or the position is invalid.';
+            shelfDividerFeedback.textContent = 'Divider could not be added right now.';
+        }
+    });
+
+    updateDividerButton.addEventListener('click', async () => {
+        const divider = selectedDivider();
+        if (!divider) {
+            return;
+        }
+
+        const payload = {
+            shelf_index: Number(divider.shelfIndex),
+            position_index: Number(selectedDividerPosition.value),
+            style: selectedDividerStyle.value,
+        };
+
+        try {
+            const updated = await fetchJson(`/api/shelf-dividers/${divider.id}`, 'PATCH', payload);
+            applyState(updated);
+            shelfDividerFeedback.textContent = 'Shelf divider updated.';
+        } catch {
+            shelfDividerFeedback.textContent = 'Divider could not be updated right now.';
         }
     });
 

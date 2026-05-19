@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Book;
 use App\Models\BookPlacement;
 use App\Models\ShelfDivider;
+use App\Models\ShelfItem;
 use App\Models\User;
 use App\Models\UserPreference;
 use App\Models\WantToReadNote;
@@ -20,7 +21,9 @@ class LibraryController extends Controller
 {
     private const ROTATION_MODES = ['upright', 'side', 'tilt_left', 'tilt_right'];
 
-    private const DIVIDER_STYLES = ['bookend', 'plant', 'knick_knack'];
+    private const DIVIDER_STYLES = ['bookend', 'bookend_left', 'bookend_right', 'plant', 'knick_knack'];
+
+    private const MAX_SHELF_POSITION = 250;
 
     public function __construct(
         private readonly LibraryStateService $libraryState,
@@ -30,6 +33,7 @@ class LibraryController extends Controller
     public function state(Request $request): JsonResponse
     {
         $user = $this->userFromRequest($request);
+        $this->ensureShelfItemsForUser($user->id);
 
         return response()->json($this->libraryState->payload($user));
     }
@@ -49,6 +53,7 @@ class LibraryController extends Controller
     public function searchBookshelf(Request $request): JsonResponse
     {
         $user = $this->userFromRequest($request);
+        $this->ensureShelfItemsForUser($user->id);
         $data = $request->validate([
             'query' => ['required', 'string', 'max:180'],
         ]);
@@ -59,21 +64,33 @@ class LibraryController extends Controller
             return response()->json(['results' => []]);
         }
 
-        $results = Book::query()
+        $books = Book::query()
             ->where('user_id', $user->id)
-            ->whereHas('placement')
             ->where('title', 'like', "%{$query}%")
-            ->with('placement')
             ->orderBy('title')
             ->limit(20)
+            ->get();
+
+        $shelfItems = ShelfItem::query()
+            ->where('user_id', $user->id)
+            ->where('item_type', ShelfItem::TYPE_BOOK)
+            ->whereIn('item_id', $books->pluck('id')->all())
             ->get()
-            ->map(fn (Book $book): array => [
-                'id' => $book->id,
-                'title' => $book->title,
-                'author' => $book->author,
-                'shelfIndex' => $book->placement?->shelf_index,
-                'positionIndex' => $book->placement?->position_index,
-            ])
+            ->keyBy('item_id');
+
+        $results = $books
+            ->filter(fn (Book $book): bool => $shelfItems->has($book->id))
+            ->map(function (Book $book) use ($shelfItems): array {
+                $item = $shelfItems->get($book->id);
+
+                return [
+                    'id' => $book->id,
+                    'title' => $book->title,
+                    'author' => $book->author,
+                    'shelfIndex' => (int) $item->shelf_index,
+                    'positionIndex' => (int) $item->position_index,
+                ];
+            })
             ->values()
             ->all();
 
@@ -96,6 +113,7 @@ class LibraryController extends Controller
     public function storeBook(Request $request): JsonResponse
     {
         $user = $this->userFromRequest($request);
+        $this->ensureShelfItemsForUser($user->id);
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:180'],
@@ -146,6 +164,7 @@ class LibraryController extends Controller
     {
         $user = $this->userFromRequest($request);
         $this->assertOwnership($book->user_id === $user->id);
+        $this->ensureShelfItemsForUser($user->id);
 
         $data = $request->validate([
             'shelf_index' => ['required', 'integer', 'min:0', 'max:20'],
@@ -225,21 +244,17 @@ class LibraryController extends Controller
     {
         $user = $this->userFromRequest($request);
         $this->assertOwnership($book->user_id === $user->id);
+        $this->ensureShelfItemsForUser($user->id);
 
         DB::transaction(function () use ($book): void {
-            $placement = $book->placement;
-            if ($placement) {
-                BookPlacement::query()
-                    ->where('user_id', $book->user_id)
-                    ->where('shelf_index', $placement->shelf_index)
-                    ->where('position_index', '>', $placement->position_index)
-                    ->decrement('position_index');
-            }
+            $removedShelf = $this->removeShelfItem($book->user_id, ShelfItem::TYPE_BOOK, $book->id);
 
             $book->delete([]);
+            $this->syncBookPlacementsFromShelfItems($book->user_id);
+            $this->syncShelfDividersFromShelfItems($book->user_id);
 
-            if ($placement) {
-                $this->normalizeShelfRotationModes($book->user_id, $placement->shelf_index);
+            if ($removedShelf !== null) {
+                $this->normalizeShelfRotationModes($book->user_id, $removedShelf);
             }
         });
 
@@ -307,6 +322,43 @@ class LibraryController extends Controller
     public function storeShelfDivider(Request $request): JsonResponse
     {
         $user = $this->userFromRequest($request);
+        $this->ensureShelfItemsForUser($user->id);
+
+        $data = $request->validate([
+            'shelf_index' => ['required', 'integer', 'min:0', 'max:20'],
+            'style' => ['required', Rule::in(self::DIVIDER_STYLES)],
+        ]);
+
+        DB::transaction(function () use ($user, $data): void {
+            $shelfIndex = (int) $data['shelf_index'];
+
+            $divider = ShelfDivider::query()->create([
+                'user_id' => $user->id,
+                'shelf_index' => $shelfIndex,
+                'position_index' => $this->nextLegacyDividerPosition($user->id, $shelfIndex),
+                'style' => $data['style'],
+            ]);
+
+            $this->moveShelfItem(
+                $user->id,
+                ShelfItem::TYPE_DIVIDER,
+                $divider->id,
+                $shelfIndex,
+                $this->nextShelfTailPosition($user->id, $shelfIndex),
+            );
+
+            $this->syncBookPlacementsFromShelfItems($user->id);
+            $this->syncShelfDividersFromShelfItems($user->id);
+        });
+
+        return response()->json($this->libraryState->payload($user));
+    }
+
+    public function updateShelfDivider(Request $request, ShelfDivider $divider): JsonResponse
+    {
+        $user = $this->userFromRequest($request);
+        $this->assertOwnership($divider->user_id === $user->id);
+        $this->ensureShelfItemsForUser($user->id);
 
         $data = $request->validate([
             'shelf_index' => ['required', 'integer', 'min:0', 'max:20'],
@@ -314,30 +366,22 @@ class LibraryController extends Controller
             'style' => ['required', Rule::in(self::DIVIDER_STYLES)],
         ]);
 
-        $shelfIndex = (int) $data['shelf_index'];
-        $bookCount = (int) BookPlacement::query()
-            ->where('user_id', $user->id)
-            ->where('shelf_index', $shelfIndex)
-            ->count();
+        DB::transaction(function () use ($user, $divider, $data): void {
+            $this->moveShelfItem(
+                $user->id,
+                ShelfItem::TYPE_DIVIDER,
+                $divider->id,
+                (int) $data['shelf_index'],
+                (int) $data['position_index'],
+            );
 
-        $positionIndex = max(0, min((int) $data['position_index'], $bookCount));
+            $divider->update([
+                'style' => $data['style'],
+            ]);
 
-        abort_if(
-            ShelfDivider::query()
-                ->where('user_id', $user->id)
-                ->where('shelf_index', $shelfIndex)
-                ->where('position_index', $positionIndex)
-                ->exists(),
-            422,
-            'A shelf divider already exists at that position.'
-        );
-
-        ShelfDivider::query()->create([
-            'user_id' => $user->id,
-            'shelf_index' => $shelfIndex,
-            'position_index' => $positionIndex,
-            'style' => $data['style'],
-        ]);
+            $this->syncBookPlacementsFromShelfItems($user->id);
+            $this->syncShelfDividersFromShelfItems($user->id);
+        });
 
         return response()->json($this->libraryState->payload($user));
     }
@@ -346,8 +390,14 @@ class LibraryController extends Controller
     {
         $user = $this->userFromRequest($request);
         $this->assertOwnership($divider->user_id === $user->id);
+        $this->ensureShelfItemsForUser($user->id);
 
-        $divider->delete([]);
+        DB::transaction(function () use ($user, $divider): void {
+            $this->removeShelfItem($user->id, ShelfItem::TYPE_DIVIDER, $divider->id);
+            $divider->delete([]);
+            $this->syncBookPlacementsFromShelfItems($user->id);
+            $this->syncShelfDividersFromShelfItems($user->id);
+        });
 
         return response()->json($this->libraryState->payload($user));
     }
@@ -380,79 +430,341 @@ class LibraryController extends Controller
     {
         DB::transaction(function () use ($book, $targetShelf, $targetPosition, $rotationMode): void {
             $targetShelf = max(0, $targetShelf);
-            $currentPlacement = BookPlacement::query()
-                ->where('book_id', $book->id)
+            $currentPlacement = BookPlacement::query()->where('book_id', $book->id)->first();
+            $existingItem = ShelfItem::query()
+                ->where('user_id', $book->user_id)
+                ->where('item_type', ShelfItem::TYPE_BOOK)
+                ->where('item_id', $book->id)
                 ->first();
-            $resolvedRotationMode = $rotationMode;
-            $previousShelfIndex = $currentPlacement?->shelf_index;
 
-            if ($currentPlacement) {
-                BookPlacement::query()
-                    ->where('user_id', $book->user_id)
-                    ->where('shelf_index', $currentPlacement->shelf_index)
-                    ->where('position_index', '>', $currentPlacement->position_index)
-                    ->decrement('position_index');
+            $previousShelfIndex = $existingItem?->shelf_index;
+            $resolvedRotationMode = $rotationMode ?: ($currentPlacement?->rotation_mode ?: 'upright');
 
-                if ($currentPlacement->shelf_index === $targetShelf && $targetPosition > $currentPlacement->position_index) {
-                    $targetPosition -= 1;
-                }
+            $movedItem = $this->moveShelfItem(
+                $book->user_id,
+                ShelfItem::TYPE_BOOK,
+                $book->id,
+                $targetShelf,
+                $targetPosition === PHP_INT_MAX
+                    ? $this->nextShelfTailPosition($book->user_id, $targetShelf)
+                    : min(
+                        max(0, $targetPosition),
+                        $this->nextShelfTailPosition($book->user_id, $targetShelf),
+                    ),
+            );
 
-                if (! $resolvedRotationMode) {
-                    $resolvedRotationMode = $currentPlacement->rotation_mode ?: 'upright';
-                }
+            BookPlacement::query()->updateOrCreate(
+                ['book_id' => $book->id],
+                [
+                    'user_id' => $book->user_id,
+                    'shelf_index' => (int) $movedItem->shelf_index,
+                    'position_index' => (int) $movedItem->position_index,
+                    'rotation_mode' => $resolvedRotationMode,
+                ],
+            );
 
-                $currentPlacement->delete([]);
-            }
+            $this->syncBookPlacementsFromShelfItems($book->user_id);
+            $this->syncShelfDividersFromShelfItems($book->user_id);
+            $this->normalizeShelfRotationModes($book->user_id, (int) $movedItem->shelf_index);
 
-            $booksOnShelf = (int) BookPlacement::query()
-                ->where('user_id', $book->user_id)
-                ->where('shelf_index', $targetShelf)
-                ->count();
-
-            $targetPosition = max(0, min($targetPosition, $booksOnShelf));
-            $resolvedRotationMode = $resolvedRotationMode ?: 'upright';
-
-            BookPlacement::query()
-                ->where('user_id', $book->user_id)
-                ->where('shelf_index', $targetShelf)
-                ->where('position_index', '>=', $targetPosition)
-                ->increment('position_index');
-
-            BookPlacement::query()->create([
-                'book_id' => $book->id,
-                'user_id' => $book->user_id,
-                'shelf_index' => $targetShelf,
-                'position_index' => $targetPosition,
-                'rotation_mode' => $resolvedRotationMode,
-            ]);
-
-            $this->normalizeShelfRotationModes($book->user_id, $targetShelf);
-
-            if ($previousShelfIndex !== null && $previousShelfIndex !== $targetShelf) {
-                $this->normalizeShelfRotationModes($book->user_id, $previousShelfIndex);
+            if ($previousShelfIndex !== null && (int) $previousShelfIndex !== (int) $movedItem->shelf_index) {
+                $this->normalizeShelfRotationModes($book->user_id, (int) $previousShelfIndex);
             }
         });
     }
 
     private function normalizeShelfRotationModes(int $userId, int $shelfIndex): void
     {
-        $lastPosition = BookPlacement::query()
+        $lastBookItem = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('shelf_index', $shelfIndex)
+            ->where('item_type', ShelfItem::TYPE_BOOK)
+            ->orderByDesc('position_index')
+            ->first();
+
+        if (! $lastBookItem) {
+            return;
+        }
+
+        BookPlacement::query()
+            ->where('book_id', (int) $lastBookItem->item_id)
+            ->where('rotation_mode', 'tilt_right')
+            ->update(['rotation_mode' => 'upright']);
+    }
+
+    private function moveShelfItem(int $userId, string $itemType, int $itemId, int $targetShelf, int $targetPosition): ShelfItem
+    {
+        $targetShelf = max(0, $targetShelf);
+        $targetPosition = max(0, min($targetPosition, self::MAX_SHELF_POSITION));
+        $current = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('item_type', $itemType)
+            ->where('item_id', $itemId)
+            ->first();
+
+        if (! $current) {
+            ShelfItem::query()
+                ->where('user_id', $userId)
+                ->where('shelf_index', $targetShelf)
+                ->where('position_index', '>=', $targetPosition)
+                ->increment('position_index');
+
+            return ShelfItem::query()->create([
+                'user_id' => $userId,
+                'shelf_index' => $targetShelf,
+                'position_index' => $targetPosition,
+                'item_type' => $itemType,
+                'item_id' => $itemId,
+            ]);
+        }
+
+        $currentShelf = (int) $current->shelf_index;
+        $currentPosition = (int) $current->position_index;
+
+        if ($currentShelf === $targetShelf && $currentPosition === $targetPosition) {
+            return $current;
+        }
+
+        $current->update([
+            'position_index' => 1_000_000 + (int) $current->id,
+        ]);
+
+        if ($currentShelf !== $targetShelf) {
+            ShelfItem::query()
+                ->where('user_id', $userId)
+                ->where('shelf_index', $currentShelf)
+                ->where('position_index', '>', $currentPosition)
+                ->decrement('position_index');
+
+            ShelfItem::query()
+                ->where('user_id', $userId)
+                ->where('shelf_index', $targetShelf)
+                ->where('position_index', '>=', $targetPosition)
+                ->increment('position_index');
+        } elseif ($targetPosition < $currentPosition) {
+            ShelfItem::query()
+                ->where('user_id', $userId)
+                ->where('shelf_index', $targetShelf)
+                ->whereBetween('position_index', [$targetPosition, $currentPosition - 1])
+                ->increment('position_index');
+        } else {
+            ShelfItem::query()
+                ->where('user_id', $userId)
+                ->where('shelf_index', $targetShelf)
+                ->whereBetween('position_index', [$currentPosition + 1, $targetPosition])
+                ->decrement('position_index');
+        }
+
+        $current->update([
+            'shelf_index' => $targetShelf,
+            'position_index' => $targetPosition,
+        ]);
+
+        return $current->refresh();
+    }
+
+    private function removeShelfItem(int $userId, string $itemType, int $itemId): ?int
+    {
+        $item = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('item_type', $itemType)
+            ->where('item_id', $itemId)
+            ->first();
+
+        if (! $item) {
+            return null;
+        }
+
+        $shelfIndex = (int) $item->shelf_index;
+        $positionIndex = (int) $item->position_index;
+        $item->delete([]);
+
+        ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('shelf_index', $shelfIndex)
+            ->where('position_index', '>', $positionIndex)
+            ->decrement('position_index');
+
+        return $shelfIndex;
+    }
+
+    private function nextShelfTailPosition(int $userId, int $shelfIndex): int
+    {
+        $lastPosition = ShelfItem::query()
             ->where('user_id', $userId)
             ->where('shelf_index', $shelfIndex)
             ->max('position_index');
 
         if (! is_numeric($lastPosition)) {
+            return 0;
+        }
+
+        return min(((int) $lastPosition) + 1, self::MAX_SHELF_POSITION);
+    }
+
+    private function nextLegacyDividerPosition(int $userId, int $shelfIndex): int
+    {
+        $lastDividerPosition = ShelfDivider::query()
+            ->where('user_id', $userId)
+            ->where('shelf_index', $shelfIndex)
+            ->max('position_index');
+
+        if (! is_numeric($lastDividerPosition)) {
+            return 0;
+        }
+
+        return min(((int) $lastDividerPosition) + 1, self::MAX_SHELF_POSITION);
+    }
+
+    private function syncBookPlacementsFromShelfItems(int $userId): void
+    {
+        $bookItems = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('item_type', ShelfItem::TYPE_BOOK)
+            ->get()
+            ->keyBy('item_id');
+
+        $placements = BookPlacement::query()->where('user_id', $userId)->get();
+
+        foreach ($placements as $placement) {
+            $item = $bookItems->get($placement->book_id);
+            if (! $item) {
+                continue;
+            }
+
+            $placement->update([
+                'shelf_index' => (int) $item->shelf_index,
+                'position_index' => (int) $item->position_index,
+            ]);
+        }
+    }
+
+    private function syncShelfDividersFromShelfItems(int $userId): void
+    {
+        $dividerItems = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('item_type', ShelfItem::TYPE_DIVIDER)
+            ->get()
+            ->keyBy('item_id');
+
+        $dividers = ShelfDivider::query()->where('user_id', $userId)->get();
+
+        foreach ($dividers as $divider) {
+            $item = $dividerItems->get($divider->id);
+            if (! $item) {
+                continue;
+            }
+
+            $divider->update([
+                'shelf_index' => (int) $item->shelf_index,
+                'position_index' => 1_000_000 + (int) $divider->id,
+            ]);
+        }
+
+        foreach ($dividers as $divider) {
+            $item = $dividerItems->get($divider->id);
+            if (! $item) {
+                continue;
+            }
+
+            $divider->update([
+                'shelf_index' => (int) $item->shelf_index,
+                'position_index' => (int) $item->position_index,
+            ]);
+        }
+    }
+
+    private function ensureShelfItemsForUser(int $userId): void
+    {
+        $bookCount = (int) BookPlacement::query()->where('user_id', $userId)->count();
+        $dividerCount = (int) ShelfDivider::query()->where('user_id', $userId)->count();
+        $requiredCount = $bookCount + $dividerCount;
+
+        if ($requiredCount === 0) {
             return;
         }
 
-        $lastPosition = (int) $lastPosition;
+        $itemCount = (int) ShelfItem::query()->where('user_id', $userId)->count();
+        if ($itemCount >= $requiredCount) {
+            return;
+        }
 
-        BookPlacement::query()
+        $this->rebuildShelfItemsFromLegacy($userId);
+    }
+
+    private function rebuildShelfItemsFromLegacy(int $userId): void
+    {
+        $bookRows = BookPlacement::query()
             ->where('user_id', $userId)
-            ->where('shelf_index', $shelfIndex)
-            ->where('position_index', $lastPosition)
-            ->where('rotation_mode', 'tilt_right')
-            ->update(['rotation_mode' => 'upright']);
+            ->orderBy('shelf_index')
+            ->orderBy('position_index')
+            ->orderBy('id')
+            ->get(['book_id', 'shelf_index', 'position_index']);
+
+        $dividerRows = ShelfDivider::query()
+            ->where('user_id', $userId)
+            ->orderBy('shelf_index')
+            ->orderBy('position_index')
+            ->orderBy('id')
+            ->get(['id', 'shelf_index', 'position_index']);
+
+        $grouped = [];
+
+        foreach ($bookRows as $row) {
+            $key = $userId.':'.(int) $row->shelf_index;
+            $grouped[$key][] = [
+                'item_type' => ShelfItem::TYPE_BOOK,
+                'item_id' => (int) $row->book_id,
+                'shelf_index' => (int) $row->shelf_index,
+                'base_position' => (int) $row->position_index,
+                'sort_priority' => 0,
+            ];
+        }
+
+        foreach ($dividerRows as $row) {
+            $key = $userId.':'.(int) $row->shelf_index;
+            $grouped[$key][] = [
+                'item_type' => ShelfItem::TYPE_DIVIDER,
+                'item_id' => (int) $row->id,
+                'shelf_index' => (int) $row->shelf_index,
+                'base_position' => (int) $row->position_index,
+                'sort_priority' => 1,
+            ];
+        }
+
+        ShelfItem::query()->where('user_id', $userId)->delete();
+
+        foreach ($grouped as $items) {
+            usort($items, function (array $left, array $right): int {
+                if ($left['base_position'] !== $right['base_position']) {
+                    return $left['base_position'] <=> $right['base_position'];
+                }
+
+                if ($left['sort_priority'] !== $right['sort_priority']) {
+                    return $left['sort_priority'] <=> $right['sort_priority'];
+                }
+
+                return $left['item_id'] <=> $right['item_id'];
+            });
+
+            $occupiedPositions = [];
+
+            foreach ($items as $item) {
+                $position = $item['base_position'];
+                while (isset($occupiedPositions[$position])) {
+                    $position += 1;
+                }
+                $occupiedPositions[$position] = true;
+
+                ShelfItem::query()->create([
+                    'user_id' => $userId,
+                    'shelf_index' => $item['shelf_index'],
+                    'position_index' => $position,
+                    'item_type' => $item['item_type'],
+                    'item_id' => $item['item_id'],
+                ]);
+            }
+        }
     }
 
     private function userFromRequest(Request $request): User

@@ -71,6 +71,7 @@ Route::middleware('auth')->group(function (): void {
         Route::patch('/books/{book}/cover', [LibraryController::class, 'updateBookCover']);
         Route::delete('/books/{book}', [LibraryController::class, 'destroyBook']);
         Route::post('/shelf-dividers', [LibraryController::class, 'storeShelfDivider']);
+        Route::patch('/shelf-dividers/{divider}', [LibraryController::class, 'updateShelfDivider']);
         Route::delete('/shelf-dividers/{divider}', [LibraryController::class, 'destroyShelfDivider']);
         Route::post('/notes', [LibraryController::class, 'storeNote']);
         Route::patch('/notes/{note}', [LibraryController::class, 'updateNote']);

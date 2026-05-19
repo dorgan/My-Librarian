@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Book;
 use App\Models\ShelfDivider;
+use App\Models\ShelfItem;
 use App\Models\User;
 use App\Models\UserPreference;
 use App\Models\WantToReadNote;
@@ -14,14 +15,33 @@ class LibraryStateService
 
     public function payload(User $user): array
     {
+        $shelfItems = ShelfItem::query()
+            ->where('user_id', $user->id)
+            ->orderBy('shelf_index')
+            ->orderBy('position_index')
+            ->orderBy('id')
+            ->get();
+
+        $bookShelfItems = $shelfItems
+            ->where('item_type', ShelfItem::TYPE_BOOK)
+            ->keyBy('item_id');
+
+        $dividerShelfItems = $shelfItems
+            ->where('item_type', ShelfItem::TYPE_DIVIDER)
+            ->keyBy('item_id');
+
         $books = Book::query()
             ->with('placement')
             ->where('user_id', $user->id)
             ->get()
-            ->filter(fn (Book $book): bool => (bool) $book->placement)
-            ->sortBy(fn (Book $book): string => sprintf('%03d-%04d-%08d', $book->placement->shelf_index, $book->placement->position_index, $book->id))
+            ->filter(fn (Book $book): bool => (bool) $book->placement && $bookShelfItems->has($book->id))
+            ->sortBy(function (Book $book) use ($bookShelfItems): string {
+                $item = $bookShelfItems->get($book->id);
+
+                return sprintf('%03d-%04d-%08d', (int) $item->shelf_index, (int) $item->position_index, $book->id);
+            })
             ->values()
-            ->map(fn (Book $book): array => $this->serializeBook($book));
+            ->map(fn (Book $book): array => $this->serializeBook($book, $bookShelfItems->get($book->id)));
 
         $notes = WantToReadNote::query()
             ->where('user_id', $user->id)
@@ -37,14 +57,18 @@ class LibraryStateService
 
         $shelfDividers = ShelfDivider::query()
             ->where('user_id', $user->id)
-            ->orderBy('shelf_index')
-            ->orderBy('position_index')
             ->orderBy('id')
             ->get()
+            ->filter(fn (ShelfDivider $divider): bool => $dividerShelfItems->has($divider->id))
+            ->sortBy(function (ShelfDivider $divider) use ($dividerShelfItems): string {
+                $item = $dividerShelfItems->get($divider->id);
+
+                return sprintf('%03d-%04d-%08d', (int) $item->shelf_index, (int) $item->position_index, $divider->id);
+            })
             ->map(fn (ShelfDivider $divider): array => [
                 'id' => $divider->id,
-                'shelfIndex' => $divider->shelf_index,
-                'positionIndex' => $divider->position_index,
+                'shelfIndex' => (int) $dividerShelfItems->get($divider->id)->shelf_index,
+                'positionIndex' => (int) $dividerShelfItems->get($divider->id)->position_index,
                 'style' => $divider->style,
             ]);
 
@@ -71,7 +95,7 @@ class LibraryStateService
         ];
     }
 
-    private function serializeBook(Book $book): array
+    private function serializeBook(Book $book, ShelfItem $shelfItem): array
     {
         $payload = is_array($book->open_library_payload) ? $book->open_library_payload : [];
         $coverIds = collect($book->open_library_cover_ids ?: $this->openLibrary->coverIdsFromPayload($payload))
@@ -101,8 +125,8 @@ class LibraryStateService
             'coverOptions' => $this->openLibrary->coverOptions($coverIds->all()),
             'canRefreshMetadata' => filled($book->open_library_work_key) || filled($book->open_library_edition_key),
             'hasOpenLibraryMetadata' => $payload !== [],
-            'shelfIndex' => $book->placement->shelf_index,
-            'positionIndex' => $book->placement->position_index,
+            'shelfIndex' => (int) $shelfItem->shelf_index,
+            'positionIndex' => (int) $shelfItem->position_index,
             'rotationMode' => $book->placement->rotation_mode ?: 'upright',
         ];
     }

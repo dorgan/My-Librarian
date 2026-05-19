@@ -255,21 +255,20 @@ class LibraryApiTest extends TestCase
 
         $createResponse = $this->postJson('/api/shelf-dividers', [
             'shelf_index' => 1,
-            'position_index' => 2,
-            'style' => 'plant',
+            'style' => 'bookend_right',
         ]);
 
         $createResponse->assertOk();
         $createResponse->assertJsonCount(1, 'shelfDividers');
         $createResponse->assertJsonPath('shelfDividers.0.shelfIndex', 1);
         $createResponse->assertJsonPath('shelfDividers.0.positionIndex', 0);
-        $createResponse->assertJsonPath('shelfDividers.0.style', 'plant');
+        $createResponse->assertJsonPath('shelfDividers.0.style', 'bookend_right');
 
         $this->assertDatabaseHas('shelf_dividers', [
             'user_id' => $user->id,
             'shelf_index' => 1,
             'position_index' => 0,
-            'style' => 'plant',
+            'style' => 'bookend_right',
         ]);
 
         /** @var ShelfDivider $divider */
@@ -280,6 +279,118 @@ class LibraryApiTest extends TestCase
             ->assertJsonCount(0, 'shelfDividers');
 
         $this->assertDatabaseMissing('shelf_dividers', ['id' => $divider->id]);
+    }
+
+    public function test_multiple_dividers_can_be_added_to_the_same_shelf(): void
+    {
+        $this->signIn('reader@example.com');
+
+        $this->postJson('/api/shelf-dividers', [
+            'shelf_index' => 1,
+            'style' => 'bookend_left',
+        ])->assertOk();
+
+        $this->postJson('/api/shelf-dividers', [
+            'shelf_index' => 1,
+            'style' => 'plant',
+        ])->assertOk();
+
+        $this->postJson('/api/shelf-dividers', [
+            'shelf_index' => 1,
+            'style' => 'knick_knack',
+        ])->assertOk();
+
+        $this->assertSame(3, ShelfDivider::query()->where('shelf_index', 1)->count());
+    }
+
+    public function test_shelf_dividers_are_auto_placed_at_end_and_can_be_moved_between_books(): void
+    {
+        $user = $this->signIn('reader@example.com');
+
+        $first = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'First',
+            'spine_color' => '#6f4e37',
+        ]);
+
+        $second = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Second',
+            'spine_color' => '#6f4e37',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $first->id,
+            'user_id' => $user->id,
+            'shelf_index' => 1,
+            'position_index' => 0,
+            'rotation_mode' => 'upright',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $second->id,
+            'user_id' => $user->id,
+            'shelf_index' => 1,
+            'position_index' => 1,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $this->postJson('/api/shelf-dividers', [
+            'shelf_index' => 1,
+            'style' => 'bookend_left',
+        ])->assertOk()
+            ->assertJsonPath('shelfDividers.0.positionIndex', 2)
+            ->assertJsonPath('shelfDividers.0.style', 'bookend_left');
+
+        /** @var ShelfDivider $divider */
+        $divider = ShelfDivider::query()->firstOrFail();
+
+        $this->patchJson("/api/shelf-dividers/{$divider->id}", [
+            'shelf_index' => 1,
+            'position_index' => 1,
+            'style' => 'plant',
+        ])->assertOk()
+            ->assertJsonPath('shelfDividers.0.positionIndex', 1)
+            ->assertJsonPath('shelfDividers.0.style', 'plant');
+
+        $this->assertDatabaseHas('shelf_dividers', [
+            'user_id' => $user->id,
+            'shelf_index' => 1,
+            'position_index' => 1,
+            'style' => 'plant',
+        ]);
+    }
+
+    public function test_moving_divider_to_another_dividers_position_reorders_dividers(): void
+    {
+        $user = $this->signIn('reader@example.com');
+
+        $first = ShelfDivider::query()->create([
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 2,
+            'style' => 'bookend_left',
+        ]);
+
+        $second = ShelfDivider::query()->create([
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 3,
+            'style' => 'plant',
+        ]);
+
+        $this->patchJson("/api/shelf-dividers/{$first->id}", [
+            'shelf_index' => 0,
+            'position_index' => 3,
+            'style' => 'bookend_right',
+        ])->assertOk();
+
+        $first->refresh();
+        $second->refresh();
+
+        $this->assertSame(3, (int) $first->position_index);
+        $this->assertSame(2, (int) $second->position_index);
+        $this->assertSame('bookend_right', $first->style);
     }
 
     public function test_user_cannot_delete_another_users_shelf_divider(): void
