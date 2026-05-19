@@ -1710,6 +1710,15 @@ if (initialStateElement) {
         ensureAnimatedBooks();
     };
 
+    const refreshLibraryStateOnLoad = async () => {
+        try {
+            const latestState = await fetchJson('/api/library-state');
+            applyState(latestState);
+        } catch (error) {
+            window.console.warn('Unable to refresh library state on startup.', error);
+        }
+    };
+
     const renderNotes = () => {
         notesList.innerHTML = '';
 
@@ -2511,4 +2520,5 @@ if (initialStateElement) {
     setCanvasSize();
     syncPanels();
     requestAnimationFrame(drawBookcase);
+    refreshLibraryStateOnLoad();
 }
