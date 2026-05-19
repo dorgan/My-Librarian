@@ -18,13 +18,19 @@
     @php
         $hotFile = public_path('hot');
         $manifestPath = public_path('build/manifest.json');
-        $requestHost = request()->getHost();
+        $requestOrigin = request()->getSchemeAndHttpHost();
         $useHotVite = false;
 
         if (file_exists($hotFile)) {
             $hotUrl = trim((string) file_get_contents($hotFile));
+            $hotOrigin = parse_url($hotUrl, PHP_URL_SCHEME);
             $hotHost = parse_url($hotUrl, PHP_URL_HOST);
-            $useHotVite = is_string($hotHost) && strcasecmp($hotHost, $requestHost) === 0;
+            $hotPort = parse_url($hotUrl, PHP_URL_PORT);
+
+            if (is_string($hotOrigin) && is_string($hotHost)) {
+                $hotOrigin = strtolower($hotOrigin).'://'.strtolower($hotHost).($hotPort ? ':'.$hotPort : '');
+                $useHotVite = strcasecmp($hotOrigin, strtolower($requestOrigin)) === 0;
+            }
         }
 
         $manifest = file_exists($manifestPath) ? json_decode((string) file_get_contents($manifestPath), true) : null;
