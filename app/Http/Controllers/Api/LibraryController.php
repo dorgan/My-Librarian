@@ -676,8 +676,22 @@ class LibraryController extends Controller
 
     private function ensureShelfItemsForUser(int $userId): void
     {
-        $bookCount = (int) BookPlacement::query()->where('user_id', $userId)->count();
-        $dividerCount = (int) ShelfDivider::query()->where('user_id', $userId)->count();
+        $bookIds = BookPlacement::query()
+            ->where('user_id', $userId)
+            ->pluck('book_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->sort()
+            ->values();
+
+        $dividerIds = ShelfDivider::query()
+            ->where('user_id', $userId)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->sort()
+            ->values();
+
+        $bookCount = $bookIds->count();
+        $dividerCount = $dividerIds->count();
         $requiredCount = $bookCount + $dividerCount;
 
         if ($requiredCount === 0) {
@@ -685,7 +699,28 @@ class LibraryController extends Controller
         }
 
         $itemCount = (int) ShelfItem::query()->where('user_id', $userId)->count();
-        if ($itemCount >= $requiredCount) {
+
+        $itemBookIds = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('item_type', ShelfItem::TYPE_BOOK)
+            ->pluck('item_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->sort()
+            ->values();
+
+        $itemDividerIds = ShelfItem::query()
+            ->where('user_id', $userId)
+            ->where('item_type', ShelfItem::TYPE_DIVIDER)
+            ->pluck('item_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->sort()
+            ->values();
+
+        $isComplete = $itemCount >= $requiredCount
+            && $itemBookIds->all() === $bookIds->all()
+            && $itemDividerIds->all() === $dividerIds->all();
+
+        if ($isComplete) {
             return;
         }
 

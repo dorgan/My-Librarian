@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Book;
 use App\Models\BookPlacement;
 use App\Models\ShelfDivider;
+use App\Models\ShelfItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
@@ -435,6 +436,73 @@ class LibraryApiTest extends TestCase
         $this->assertSame([], $state['shelfDividers']);
         $this->assertSame('oak', $state['preferences']['bookcaseTheme']);
         $this->assertNotSame($firstUser->id, $secondUser->id);
+    }
+
+    public function test_library_state_rebuilds_shelf_items_when_item_mapping_is_inconsistent(): void
+    {
+        $user = $this->signIn('reader@example.com');
+
+        $book = Book::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Dune',
+            'author' => 'Frank Herbert',
+            'spine_color' => '#6f4e37',
+        ]);
+
+        BookPlacement::query()->create([
+            'book_id' => $book->id,
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'rotation_mode' => 'upright',
+        ]);
+
+        $divider = ShelfDivider::query()->create([
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 1,
+            'style' => 'bookend_left',
+        ]);
+
+        // Simulate stale shelf_items that have the right count but wrong item IDs.
+        ShelfItem::query()->create([
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 0,
+            'item_type' => ShelfItem::TYPE_BOOK,
+            'item_id' => $book->id + 1000,
+        ]);
+
+        ShelfItem::query()->create([
+            'user_id' => $user->id,
+            'shelf_index' => 0,
+            'position_index' => 1,
+            'item_type' => ShelfItem::TYPE_DIVIDER,
+            'item_id' => $divider->id + 1000,
+        ]);
+
+        $response = $this->getJson('/api/library-state')->assertOk();
+
+        $response->assertJsonCount(1, 'books');
+        $response->assertJsonPath('books.0.id', $book->id);
+        $response->assertJsonCount(1, 'shelfDividers');
+        $response->assertJsonPath('shelfDividers.0.id', $divider->id);
+
+        $this->assertDatabaseHas('shelf_items', [
+            'user_id' => $user->id,
+            'item_type' => ShelfItem::TYPE_BOOK,
+            'item_id' => $book->id,
+            'shelf_index' => 0,
+            'position_index' => 0,
+        ]);
+
+        $this->assertDatabaseHas('shelf_items', [
+            'user_id' => $user->id,
+            'item_type' => ShelfItem::TYPE_DIVIDER,
+            'item_id' => $divider->id,
+            'shelf_index' => 0,
+            'position_index' => 1,
+        ]);
     }
 
     private function signIn(string $email = 'reader@example.com'): User
