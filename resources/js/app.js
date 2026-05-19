@@ -561,8 +561,9 @@ if (initialStateElement) {
         const mobile = isMobileViewport();
         // Keep decoration objects from becoming tall/narrow on very tall mobile viewports.
         const h = clamp(shelfSpacing * (mobile ? 0.62 : 0.76), mobile ? 74 : 86, mobile ? 136 : 180);
-        const preferredWidth = Math.max(slotWidth * (mobile ? 1.05 : 0.90), h * (mobile ? 0.50 : 0.42));
-        const w = clamp(preferredWidth, mobile ? 60 : 50, mobile ? 96 : 108);
+        const preferredWidth = Math.max(slotWidth * (mobile ? 0.90 : 0.90), h * (mobile ? 0.44 : 0.42));
+        const maxSlotWidth = Math.max(34, slotWidth - (mobile ? 4 : 2));
+        const w = clamp(preferredWidth, mobile ? 44 : 50, Math.min(mobile ? 84 : 108, maxSlotWidth));
         const slotX = (pos) => padding + slotWidth * pos + (slotWidth - w) / 2;
         const slotY = (shelf) => padding + shelfSpacing * shelf + (shelfSpacing - h - 10);
 
@@ -605,8 +606,8 @@ if (initialStateElement) {
         const maxHandleX = bx + bw + handleExtension;
         const handleRadius = bh * 0.28;
         const canvasPadding = 28;
-        const rightEdgePadding = 20;
         const strokeMargin = 2;
+        const rightEdgePadding = isMobileViewport() ? 4 : 14;
         const clampedHandleX = Math.min(maxHandleX, canvas.width - canvasPadding - rightEdgePadding - strokeMargin);
         ctx.beginPath();
         ctx.arc(clampedHandleX, by + bh * 0.48, handleRadius, -Math.PI * 0.5, Math.PI * 0.5);
