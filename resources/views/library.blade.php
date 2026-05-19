@@ -28,7 +28,7 @@
             $hotPort = parse_url($hotUrl, PHP_URL_PORT);
 
             if (is_string($hotOrigin) && is_string($hotHost)) {
-                $hotOrigin = strtolower($hotOrigin).'://'.strtolower($hotHost).($hotPort ? ':'.$hotPort : '');
+                $hotOrigin = strtolower($hotOrigin) . '://' . strtolower($hotHost) . ($hotPort ? ':' . $hotPort : '');
                 $useHotVite = strcasecmp($hotOrigin, strtolower($requestOrigin)) === 0;
             }
         }
